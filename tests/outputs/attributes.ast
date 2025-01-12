@@ -1,0 +1,15 @@
+Ok(
+    Document {
+        root: Node {
+            children: [
+                Node {
+                    name: "root",
+                    attributes: {
+                        "foo": "bar",
+                        "baz": "qux",
+                    },
+                },
+            ],
+        },
+    },
+)

@@ -1,0 +1,5 @@
+<root foo="&lt;bar&gt;" baz="qux qux
+qux
+qux	qux" foobar="foo
+bar &amp; baz
+&lt; qux &gt;"/>

@@ -1,0 +1,13 @@
+Err(
+    Error {
+        kind: UnknownNamespace(
+            "foo",
+        ),
+        pos: Some(
+            (
+                2,
+                15,
+            ),
+        ),
+    },
+)

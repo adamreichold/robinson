@@ -1,0 +1,28 @@
+Ok(
+    Document {
+        root: Node {
+            children: [
+                Node {
+                    name: "root",
+                    children: [
+                        Node {
+                            text: "\n    ",
+                        },
+                        Node {
+                            name: "foo",
+                        },
+                        Node {
+                            text: "\n    ",
+                        },
+                        Node {
+                            name: "bar",
+                        },
+                        Node {
+                            text: "\n",
+                        },
+                    ],
+                },
+            ],
+        },
+    },
+)

@@ -1,0 +1,3 @@
+<root><foo>&#x0D;
+</foo><bar>&#x0D;&#x0A;</bar><baz attr="&#x0D;
+"/><qux attr="&#x0D;&#x0A;"/></root>
