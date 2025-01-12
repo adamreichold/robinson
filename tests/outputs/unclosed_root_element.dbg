@@ -1,0 +1,6 @@
+Err(
+    Error {
+        kind: UnclosedRootElement,
+        pos: None,
+    },
+)

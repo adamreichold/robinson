@@ -1,0 +1,2 @@
+tests/inputs/*.xml -text
+benches/inputs/*.xml -text
