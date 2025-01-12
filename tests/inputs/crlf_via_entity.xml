@@ -1,0 +1,9 @@
+<!DOCTYPE test [
+    <!ENTITY cr '&#x0D;'>
+    <!ENTITY lf '&#x0A;'>
+    <!ENTITY crlf '&#x0D;&#x0A;'>
+]>
+
+<root><foo>&cr;
+</foo><bar>&cr;&lf;</bar><baz attr="&cr;
+"/><qux attr="&cr;&lf;"/><foobar attr="&lf;&crlf;">&lf;&crlf;</foobar></root>

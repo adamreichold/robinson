@@ -1,0 +1,6 @@
+Err(
+    Error {
+        kind: MissingRootElement,
+        pos: None,
+    },
+)

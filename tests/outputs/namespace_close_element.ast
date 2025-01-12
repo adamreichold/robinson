@@ -1,0 +1,27 @@
+Ok(
+    Document {
+        root: Node {
+            children: [
+                Node {
+                    name: "{http://foo}root",
+                    children: [
+                        Node {
+                            text: "\n    ",
+                        },
+                        Node {
+                            name: "{http://bar}element",
+                            children: [
+                                Node {
+                                    text: "foobar",
+                                },
+                            ],
+                        },
+                        Node {
+                            text: "\n",
+                        },
+                    ],
+                },
+            ],
+        },
+    },
+)

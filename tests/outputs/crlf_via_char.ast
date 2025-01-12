@@ -1,0 +1,41 @@
+Ok(
+    Document {
+        root: Node {
+            children: [
+                Node {
+                    name: "root",
+                    children: [
+                        Node {
+                            name: "foo",
+                            children: [
+                                Node {
+                                    text: "\r\n",
+                                },
+                            ],
+                        },
+                        Node {
+                            name: "bar",
+                            children: [
+                                Node {
+                                    text: "\r\n",
+                                },
+                            ],
+                        },
+                        Node {
+                            name: "baz",
+                            attributes: {
+                                "attr": "\r ",
+                            },
+                        },
+                        Node {
+                            name: "qux",
+                            attributes: {
+                                "attr": "\r\n",
+                            },
+                        },
+                    ],
+                },
+            ],
+        },
+    },
+)

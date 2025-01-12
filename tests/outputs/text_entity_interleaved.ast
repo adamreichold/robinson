@@ -1,0 +1,22 @@
+Ok(
+    Document {
+        root: Node {
+            children: [
+                Node {
+                    name: "root",
+                    children: [
+                        Node {
+                            text: "foo",
+                        },
+                        Node {
+                            name: "bar",
+                        },
+                        Node {
+                            text: "baz",
+                        },
+                    ],
+                },
+            ],
+        },
+    },
+)

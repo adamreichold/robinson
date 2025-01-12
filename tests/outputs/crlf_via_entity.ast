@@ -1,0 +1,61 @@
+Ok(
+    Document {
+        root: Node {
+            children: [
+                Node {
+                    name: "root",
+                    children: [
+                        Node {
+                            name: "foo",
+                            children: [
+                                Node {
+                                    text: "\n",
+                                },
+                                Node {
+                                    text: "\n",
+                                },
+                            ],
+                        },
+                        Node {
+                            name: "bar",
+                            children: [
+                                Node {
+                                    text: "\n",
+                                },
+                                Node {
+                                    text: "\n",
+                                },
+                            ],
+                        },
+                        Node {
+                            name: "baz",
+                            attributes: {
+                                "attr": "  ",
+                            },
+                        },
+                        Node {
+                            name: "qux",
+                            attributes: {
+                                "attr": "  ",
+                            },
+                        },
+                        Node {
+                            name: "foobar",
+                            attributes: {
+                                "attr": "   ",
+                            },
+                            children: [
+                                Node {
+                                    text: "\n",
+                                },
+                                Node {
+                                    text: "\n",
+                                },
+                            ],
+                        },
+                    ],
+                },
+            ],
+        },
+    },
+)

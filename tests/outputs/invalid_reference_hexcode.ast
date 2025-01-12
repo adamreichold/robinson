@@ -1,0 +1,13 @@
+Err(
+    Error {
+        kind: InvalidReference(
+            "bar",
+        ),
+        pos: Some(
+            (
+                1,
+                18,
+            ),
+        ),
+    },
+)
