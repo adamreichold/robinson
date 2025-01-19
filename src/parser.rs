@@ -4,11 +4,12 @@ use std::ops::Range;
 use memchr::{memchr, memchr_iter, memchr2, memchr3};
 
 use crate::{
-    Document, NameData, StringData,
+    Document, NameData,
     attributes::AttributeData,
     error::{ErrorKind, Result},
     namespaces::NamespaceData,
     nodes::{NodeData, NodeId, NodeKind},
+    strings::StringData,
     tokenizer::{ElementEnd, Reference, Tokenizer},
 };
 
@@ -90,7 +91,7 @@ impl<'input> Parser<'input> {
 
         doc.namespaces.push(NamespaceData {
             name: Some("xml"),
-            uri: StringData::Borrowed("http://www.w3.org/XML/1998/namespace"),
+            uri: StringData::borrowed("http://www.w3.org/XML/1998/namespace"),
         })?;
 
         let namespaces_offset = doc.namespaces.len();
@@ -257,7 +258,7 @@ impl<'input> Parser<'input> {
         let mut pos = memchr2(b'&', b'\r', text.as_bytes());
 
         if pos.is_none() {
-            self.append_node(NodeKind::Text(StringData::Borrowed(text)))?;
+            self.append_node(NodeKind::Text(StringData::borrowed(text)))?;
             return Ok(());
         }
 
@@ -309,7 +310,7 @@ impl<'input> Parser<'input> {
                             let mut value = self.find_entity(name)?;
 
                             if !buf.is_empty() {
-                                self.append_node(NodeKind::Text(StringData::Owned(
+                                self.append_node(NodeKind::Text(StringData::owned(
                                     take(&mut buf).into_boxed_str(),
                                 )))?;
                             }
@@ -333,7 +334,7 @@ impl<'input> Parser<'input> {
         buf.push_str(text);
 
         if !buf.is_empty() {
-            self.append_node(NodeKind::Text(StringData::Owned(buf.into_boxed_str())))?;
+            self.append_node(NodeKind::Text(StringData::owned(buf.into_boxed_str())))?;
         }
 
         Ok(())
@@ -343,7 +344,7 @@ impl<'input> Parser<'input> {
         let mut pos = memchr(b'\r', cdata.as_bytes());
 
         if pos.is_none() {
-            self.append_node(NodeKind::Text(StringData::Borrowed(cdata)))?;
+            self.append_node(NodeKind::Text(StringData::borrowed(cdata)))?;
             return Ok(());
         }
 
@@ -365,7 +366,7 @@ impl<'input> Parser<'input> {
 
         buf.push_str(cdata);
 
-        self.append_node(NodeKind::Text(StringData::Owned(buf.into_boxed_str())))?;
+        self.append_node(NodeKind::Text(StringData::owned(buf.into_boxed_str())))?;
         Ok(())
     }
 
@@ -378,14 +379,14 @@ impl<'input> Parser<'input> {
         let pos_space = memchr3(b'\t', b'\r', b'\n', value.as_bytes());
 
         if pos_entity.is_none() && pos_space.is_none() {
-            return Ok(StringData::Borrowed(value));
+            return Ok(StringData::borrowed(value));
         }
 
         let mut buf = String::new();
 
         self.normalize_attribute_value_impl(tokenizer, value, pos_entity, pos_space, &mut buf)?;
 
-        Ok(StringData::Owned(buf.into_boxed_str()))
+        Ok(StringData::owned(buf.into_boxed_str()))
     }
 
     fn normalize_attribute_value_impl(
