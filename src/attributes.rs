@@ -2,8 +2,9 @@ use std::fmt;
 use std::slice::Iter;
 
 use crate::{
-    Document, Name, NameData, StringData,
+    Document, Name, NameData,
     nodes::{Node, NodeKind},
+    strings::StringData,
 };
 
 impl<'doc, 'input> Node<'doc, 'input> {
@@ -63,6 +64,9 @@ pub struct AttributeData<'input> {
     pub name: NameData<'input>,
     pub value: StringData<'input>,
 }
+
+const _SIZE_OF_ATTRIBUTE_DATA: () =
+    assert!(size_of::<AttributeData<'static>>() == (3 + 2) * size_of::<usize>());
 
 #[derive(Clone)]
 pub struct Attributes<'doc, 'input> {
