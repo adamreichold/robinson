@@ -6,8 +6,9 @@ use std::ptr::eq;
 use std::slice::Iter;
 
 use crate::{
-    Document, Name, NameData, StringData,
+    Document, Name, NameData,
     error::{ErrorKind, Result},
+    strings::StringData,
 };
 
 impl<'input> Document<'input> {
@@ -48,15 +49,15 @@ impl<'doc, 'input> Node<'doc, 'input> {
         self.id
     }
 
-    pub fn is_root(self) -> bool {
+    pub fn is_root(&self) -> bool {
         matches!(self.data.kind, NodeKind::Root)
     }
 
-    pub fn is_element(self) -> bool {
+    pub fn is_element(&self) -> bool {
         matches!(self.data.kind, NodeKind::Element { .. })
     }
 
-    pub fn is_text(self) -> bool {
+    pub fn is_text(&self) -> bool {
         matches!(self.data.kind, NodeKind::Text { .. })
     }
 
@@ -82,7 +83,7 @@ impl<'doc, 'input> Node<'doc, 'input> {
     }
 
     pub fn ancestors(self) -> impl Iterator<Item = Self> {
-        self.iter(Node::parent)
+        self.iter(Self::parent)
     }
 
     pub fn prev_sibling(self) -> Option<Self> {
@@ -90,11 +91,11 @@ impl<'doc, 'input> Node<'doc, 'input> {
     }
 
     pub fn prev_siblings(self) -> impl Iterator<Item = Self> {
-        self.iter(Node::prev_sibling)
+        self.iter(Self::prev_sibling)
     }
 
     pub fn prev_sibling_element(self) -> Option<Self> {
-        self.prev_siblings().find(|node| node.is_element())
+        self.prev_siblings().find(Self::is_element)
     }
 
     pub fn next_sibling(self) -> Option<Self> {
@@ -105,11 +106,11 @@ impl<'doc, 'input> Node<'doc, 'input> {
     }
 
     pub fn next_siblings(self) -> impl Iterator<Item = Self> {
-        self.iter(Node::next_sibling)
+        self.iter(Self::next_sibling)
     }
 
     pub fn next_sibling_element(self) -> Option<Self> {
-        self.next_siblings().find(|node| node.is_element())
+        self.next_siblings().find(Self::is_element)
     }
 
     pub fn has_children(self) -> bool {
@@ -144,7 +145,7 @@ impl<'doc, 'input> Node<'doc, 'input> {
     }
 
     pub fn child_elements(self) -> impl DoubleEndedIterator<Item = Self> {
-        self.children().filter(|node| node.is_element())
+        self.children().filter(Self::is_element)
     }
 
     pub fn descendants(self) -> Descendants<'doc, 'input> {
@@ -179,19 +180,11 @@ impl<'doc, 'input> Node<'doc, 'input> {
     }
 
     pub fn child_texts(self) -> impl Iterator<Item = &'doc str> {
-        self.children().filter_map(|node| node.text())
+        self.children().filter_map(Self::text)
     }
 
     pub fn descedant_texts(self) -> impl Iterator<Item = &'doc str> {
-        self.descendants().filter_map(|node| node.text())
-    }
-
-    pub fn preceeding_texts(self) -> impl Iterator<Item = &'doc str> {
-        self.prev_siblings().filter_map(|node| node.text())
-    }
-
-    pub fn following_texts(self) -> impl Iterator<Item = &'doc str> {
-        self.next_siblings().filter_map(|node| node.text())
+        self.descendants().filter_map(Self::text)
     }
 }
 
@@ -204,6 +197,9 @@ pub struct NodeData<'input> {
     pub last_child: Option<NodeId>,
 }
 
+const _SIZE_OF_NODE_DATA: () =
+    assert!(size_of::<NodeData<'static>>() == (4 + 2) * size_of::<usize>());
+
 #[derive(Debug, Clone)]
 pub enum NodeKind<'input> {
     Root,
@@ -213,6 +209,9 @@ pub enum NodeKind<'input> {
     },
     Text(StringData<'input>),
 }
+
+const _SIZE_OF_NODE_KIND: () =
+    assert!(size_of::<NodeKind<'static>>() == (3 + 1) * size_of::<usize>());
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct NodeId(NonZeroU32);

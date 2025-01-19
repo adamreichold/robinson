@@ -1,8 +1,8 @@
 use std::ops::Range;
 
 use crate::{
-    StringData,
     error::{ErrorKind, Result},
+    strings::StringData,
 };
 
 #[derive(Clone, Default)]
@@ -109,3 +109,6 @@ pub struct NamespaceData<'input> {
     pub name: Option<&'input str>,
     pub uri: StringData<'input>,
 }
+
+const _SIZE_OF_NAMESPACE_DATA: () =
+    assert!(size_of::<NamespaceData<'static>>() == (2 + 2) * size_of::<usize>());

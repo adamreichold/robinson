@@ -1,14 +1,17 @@
-#![forbid(unsafe_code)]
-#![deny(missing_debug_implementations, missing_copy_implementations)]
+#![deny(
+    unsafe_code,
+    missing_debug_implementations,
+    missing_copy_implementations
+)]
 
 mod attributes;
 mod error;
 mod namespaces;
 mod nodes;
 mod parser;
+mod strings;
 mod tokenizer;
 
-use std::cmp::Ordering;
 use std::fmt;
 
 use attributes::AttributeData;
@@ -55,6 +58,9 @@ struct NameData<'input> {
     local: &'input str,
 }
 
+const _SIZE_OF_NAME_DATA: () =
+    assert!(size_of::<NameData<'static>>() == (1 + 2) * size_of::<usize>());
+
 impl<'input> NameData<'input> {
     fn get<'doc>(self, doc: &'doc Document) -> Name<'doc, 'input> {
         let namespace = self
@@ -65,41 +71,6 @@ impl<'input> NameData<'input> {
             namespace,
             local: self.local,
         }
-    }
-}
-
-#[derive(Debug, Clone)]
-enum StringData<'input> {
-    Borrowed(&'input str),
-    Owned(Box<str>),
-}
-
-impl AsRef<str> for StringData<'_> {
-    fn as_ref(&self) -> &str {
-        match self {
-            Self::Borrowed(data) => data,
-            Self::Owned(data) => data,
-        }
-    }
-}
-
-impl PartialEq for StringData<'_> {
-    fn eq(&self, other: &Self) -> bool {
-        self.as_ref().eq(other.as_ref())
-    }
-}
-
-impl Eq for StringData<'_> {}
-
-impl PartialOrd for StringData<'_> {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
-impl Ord for StringData<'_> {
-    fn cmp(&self, other: &Self) -> Ordering {
-        self.as_ref().cmp(other.as_ref())
     }
 }
 
