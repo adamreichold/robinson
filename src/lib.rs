@@ -16,7 +16,8 @@ use std::fmt;
 
 use attributes::AttributeData;
 use namespaces::{Namespace, Namespaces};
-use nodes::NodeData;
+use nodes::{ElementData, NodeData};
+use strings::StringData;
 
 pub use attributes::{Attribute, Attributes};
 pub use error::{Error, ErrorKind};
@@ -24,7 +25,9 @@ pub use nodes::{Children, Descendants, Node, NodeId};
 
 #[derive(Clone)]
 pub struct Document<'input> {
-    nodes: Vec<NodeData<'input>>,
+    nodes: Vec<NodeData>,
+    elements: Vec<ElementData<'input>>,
+    texts: Vec<StringData<'input>>,
     attributes: Vec<AttributeData<'input>>,
     namespaces: Namespaces<'input>,
 }

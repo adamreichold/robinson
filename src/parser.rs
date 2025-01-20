@@ -8,7 +8,7 @@ use crate::{
     attributes::AttributeData,
     error::{ErrorKind, Result},
     namespaces::NamespaceData,
-    nodes::{NodeData, NodeId, NodeKind},
+    nodes::{ElementData, NodeData, NodeId},
     strings::StringData,
     tokenizer::{ElementEnd, Reference, Tokenizer},
 };
@@ -31,6 +31,8 @@ impl<'input> Document<'input> {
         }
 
         doc.nodes.shrink_to_fit();
+        doc.elements.shrink_to_fit();
+        doc.texts.shrink_to_fit();
         doc.attributes.shrink_to_fit();
         doc.namespaces.shrink_to_fit();
 
@@ -77,12 +79,15 @@ impl<'input> Parser<'input> {
 
         let mut doc = Document {
             nodes: Vec::with_capacity(nodes),
+            elements: Vec::with_capacity(nodes / 2),
+            texts: Vec::with_capacity(nodes / 2),
             attributes: Vec::with_capacity(attributes),
             namespaces: Default::default(),
         };
 
         doc.nodes.push(NodeData {
-            kind: NodeKind::Root,
+            element: None,
+            text: None,
             parent: None,
             prev_sibling: None,
             next_subtree: None,
@@ -163,7 +168,7 @@ impl<'input> Parser<'input> {
                     .namespaces
                     .find(namespaces.clone(), element.prefix)?;
 
-                let id = self.append_node(NodeKind::Element {
+                let id = self.append_element_node(ElementData {
                     name: NameData {
                         namespace,
                         local: element.local,
@@ -178,9 +183,11 @@ impl<'input> Parser<'input> {
 
                 let parent = &self.doc.nodes[self.parent.get()];
 
-                let namespace = self.doc.namespaces.find(namespaces, prefix)?;
+                if let Some(element) = parent.element {
+                    let namespace = self.doc.namespaces.find(namespaces, prefix)?;
 
-                if let NodeKind::Element { name, .. } = &parent.kind {
+                    let name = self.doc.elements[element.get()].name;
+
                     if namespace != name.namespace || local != name.local {
                         return ErrorKind::UnexpectedCloseElement.into();
                     }
@@ -205,7 +212,7 @@ impl<'input> Parser<'input> {
                     .namespaces
                     .find(namespaces.clone(), element.prefix)?;
 
-                let id = self.append_node(NodeKind::Element {
+                let id = self.append_element_node(ElementData {
                     name: NameData {
                         namespace,
                         local: element.local,
@@ -221,7 +228,7 @@ impl<'input> Parser<'input> {
         Ok(())
     }
 
-    fn append_node(&mut self, kind: NodeKind<'input>) -> Result<NodeId> {
+    fn append_node(&mut self, element: Option<NodeId>, text: Option<NodeId>) -> Result<NodeId> {
         let new_id = NodeId::new(self.doc.nodes.len())?;
 
         let prev_sibling = replace(
@@ -229,10 +236,9 @@ impl<'input> Parser<'input> {
             Some(new_id),
         );
 
-        let is_element = matches!(kind, NodeKind::Element { .. });
-
         self.doc.nodes.push(NodeData {
-            kind,
+            element,
+            text,
             parent: Some(self.parent),
             prev_sibling,
             next_subtree: None,
@@ -243,11 +249,27 @@ impl<'input> Parser<'input> {
             self.doc.nodes[id.get()].next_subtree = Some(new_id);
         }
 
-        if !is_element {
+        if element.is_none() {
             self.subtree.push(new_id);
         }
 
         Ok(new_id)
+    }
+
+    fn append_element_node(&mut self, element: ElementData<'input>) -> Result<NodeId> {
+        let id = NodeId::new(self.doc.elements.len())?;
+
+        self.doc.elements.push(element);
+
+        self.append_node(Some(id), None)
+    }
+
+    fn append_text_node(&mut self, text: StringData<'input>) -> Result<NodeId> {
+        let id = NodeId::new(self.doc.texts.len())?;
+
+        self.doc.texts.push(text);
+
+        self.append_node(None, Some(id))
     }
 
     pub fn append_text(
@@ -258,7 +280,7 @@ impl<'input> Parser<'input> {
         let mut pos = memchr2(b'&', b'\r', text.as_bytes());
 
         if pos.is_none() {
-            self.append_node(NodeKind::Text(StringData::borrowed(text)))?;
+            self.append_text_node(StringData::borrowed(text))?;
             return Ok(());
         }
 
@@ -310,9 +332,9 @@ impl<'input> Parser<'input> {
                             let mut value = self.find_entity(name)?;
 
                             if !buf.is_empty() {
-                                self.append_node(NodeKind::Text(StringData::owned(
+                                self.append_text_node(StringData::owned(
                                     take(&mut buf).into_boxed_str(),
-                                )))?;
+                                ))?;
                             }
 
                             self.open_entity()?;
@@ -334,7 +356,7 @@ impl<'input> Parser<'input> {
         buf.push_str(text);
 
         if !buf.is_empty() {
-            self.append_node(NodeKind::Text(StringData::owned(buf.into_boxed_str())))?;
+            self.append_text_node(StringData::owned(buf.into_boxed_str()))?;
         }
 
         Ok(())
@@ -344,7 +366,7 @@ impl<'input> Parser<'input> {
         let mut pos = memchr(b'\r', cdata.as_bytes());
 
         if pos.is_none() {
-            self.append_node(NodeKind::Text(StringData::borrowed(cdata)))?;
+            self.append_text_node(StringData::borrowed(cdata))?;
             return Ok(());
         }
 
@@ -366,7 +388,7 @@ impl<'input> Parser<'input> {
 
         buf.push_str(cdata);
 
-        self.append_node(NodeKind::Text(StringData::owned(buf.into_boxed_str())))?;
+        self.append_text_node(StringData::owned(buf.into_boxed_str()))?;
         Ok(())
     }
 
