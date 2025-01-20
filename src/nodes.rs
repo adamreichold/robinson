@@ -32,7 +32,7 @@ impl<'input> Document<'input> {
 #[derive(Clone, Copy)]
 pub struct Node<'doc, 'input> {
     pub(crate) id: NodeId,
-    pub(crate) data: &'doc NodeData<'input>,
+    pub(crate) data: &'doc NodeData,
     pub(crate) doc: &'doc Document<'input>,
 }
 
@@ -50,15 +50,25 @@ impl<'doc, 'input> Node<'doc, 'input> {
     }
 
     pub fn is_root(&self) -> bool {
-        matches!(self.data.kind, NodeKind::Root)
+        self.data.element.is_none() && self.data.text.is_none()
     }
 
     pub fn is_element(&self) -> bool {
-        matches!(self.data.kind, NodeKind::Element { .. })
+        self.data.element.is_some()
+    }
+
+    pub(crate) fn element_data(self) -> Option<&'doc ElementData<'input>> {
+        self.data
+            .element
+            .map(|element| &self.doc.elements[element.get()])
     }
 
     pub fn is_text(&self) -> bool {
-        matches!(self.data.kind, NodeKind::Text { .. })
+        self.data.text.is_some()
+    }
+
+    pub(crate) fn text_data(self) -> Option<&'doc StringData<'input>> {
+        self.data.text.map(|text| &self.doc.texts[text.get()])
     }
 
     fn other(self, id: NodeId) -> Self {
@@ -166,17 +176,12 @@ impl<'doc, 'input> Node<'doc, 'input> {
     }
 
     pub fn name(self) -> Option<Name<'doc, 'input>> {
-        match &self.data.kind {
-            NodeKind::Element { name, .. } => Some(name.get(self.doc)),
-            _ => None,
-        }
+        self.element_data()
+            .map(|element| element.name.get(self.doc))
     }
 
     pub fn text(self) -> Option<&'doc str> {
-        match &self.data.kind {
-            NodeKind::Text(text) => Some(text.as_ref()),
-            _ => None,
-        }
+        self.text_data().map(AsRef::as_ref)
     }
 
     pub fn child_texts(self) -> impl Iterator<Item = &'doc str> {
@@ -189,29 +194,25 @@ impl<'doc, 'input> Node<'doc, 'input> {
 }
 
 #[derive(Debug, Clone)]
-pub struct NodeData<'input> {
-    pub kind: NodeKind<'input>,
+pub struct NodeData {
+    pub element: Option<NodeId>,
+    pub text: Option<NodeId>,
     pub parent: Option<NodeId>,
     pub prev_sibling: Option<NodeId>,
     pub next_subtree: Option<NodeId>,
     pub last_child: Option<NodeId>,
 }
 
-const _SIZE_OF_NODE_DATA: () =
-    assert!(size_of::<NodeData<'static>>() == (4 + 2) * size_of::<usize>());
+const _SIZE_OF_NODE_DATA: () = assert!(size_of::<NodeData>() == 3 * size_of::<usize>());
 
 #[derive(Debug, Clone)]
-pub enum NodeKind<'input> {
-    Root,
-    Element {
-        name: NameData<'input>,
-        attributes: Range<u32>,
-    },
-    Text(StringData<'input>),
+pub struct ElementData<'input> {
+    pub name: NameData<'input>,
+    pub attributes: Range<u32>,
 }
 
-const _SIZE_OF_NODE_KIND: () =
-    assert!(size_of::<NodeKind<'static>>() == (3 + 1) * size_of::<usize>());
+const _SIZE_OF_ELEMENT_DATA: () =
+    assert!(size_of::<ElementData<'static>>() == (3 + 1) * size_of::<usize>());
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct NodeId(NonZeroU32);
@@ -277,7 +278,7 @@ impl DoubleEndedIterator for Children<'_, '_> {
 #[derive(Clone)]
 pub struct Descendants<'doc, 'input> {
     from: usize,
-    nodes: Enumerate<Iter<'doc, NodeData<'input>>>,
+    nodes: Enumerate<Iter<'doc, NodeData>>,
     doc: &'doc Document<'input>,
 }
 
