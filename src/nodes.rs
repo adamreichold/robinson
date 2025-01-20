@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::fmt;
 use std::iter::{Enumerate, from_fn};
 use std::num::NonZeroU32;
@@ -75,9 +76,9 @@ impl<'doc, 'input> Node<'doc, 'input> {
         self.doc.node(id).unwrap()
     }
 
-    fn iter<F>(self, f: F) -> impl Iterator<Item = Self>
+    fn iter<F>(self, f: F) -> impl Iterator<Item = Self> + Clone
     where
-        F: Fn(Self) -> Option<Self>,
+        F: Fn(Self) -> Option<Self> + Clone,
     {
         let mut current = Some(self);
 
@@ -92,7 +93,7 @@ impl<'doc, 'input> Node<'doc, 'input> {
         self.data.parent.map(|id| self.other(id))
     }
 
-    pub fn ancestors(self) -> impl Iterator<Item = Self> {
+    pub fn ancestors(self) -> impl Iterator<Item = Self> + Clone {
         self.iter(Self::parent)
     }
 
@@ -100,7 +101,7 @@ impl<'doc, 'input> Node<'doc, 'input> {
         self.data.prev_sibling.map(|id| self.other(id))
     }
 
-    pub fn prev_siblings(self) -> impl Iterator<Item = Self> {
+    pub fn prev_siblings(self) -> impl Iterator<Item = Self> + Clone {
         self.iter(Self::prev_sibling)
     }
 
@@ -115,7 +116,7 @@ impl<'doc, 'input> Node<'doc, 'input> {
             .map(|id| self.other(id))
     }
 
-    pub fn next_siblings(self) -> impl Iterator<Item = Self> {
+    pub fn next_siblings(self) -> impl Iterator<Item = Self> + Clone {
         self.iter(Self::next_sibling)
     }
 
@@ -154,10 +155,26 @@ impl<'doc, 'input> Node<'doc, 'input> {
         }
     }
 
-    pub fn child_elements(self) -> impl DoubleEndedIterator<Item = Self> {
+    pub fn child_elements(self) -> impl DoubleEndedIterator<Item = Self> + Clone {
         self.children().filter(Self::is_element)
     }
 
+    /// ```
+    /// # use robinson::{Document, Name};
+    /// let doc = Document::parse(r#"<root><parent><child/></parent></root>"#).unwrap();
+    ///
+    /// let mut nodes = doc.root_element().descendants();
+    ///
+    /// let node = nodes.next().unwrap();
+    /// assert_eq!(node.name(), Some(Name { namespace: None, local: "root" }));
+    ///
+    /// let node = nodes.next().unwrap();
+    /// assert_eq!(node.name(), Some(Name { namespace: None, local: "parent" }));
+    ///
+    /// let node = nodes.next().unwrap();
+    /// assert_eq!(node.name(), Some(Name { namespace: None, local: "child" }));
+    ///
+    /// assert_eq!(nodes.next(), None);
     pub fn descendants(self) -> Descendants<'doc, 'input> {
         let from = self.id.get();
 
@@ -184,13 +201,63 @@ impl<'doc, 'input> Node<'doc, 'input> {
         self.text_data().map(AsRef::as_ref)
     }
 
-    pub fn child_texts(self) -> impl Iterator<Item = &'doc str> {
+    pub fn child_texts(self) -> impl Iterator<Item = &'doc str> + Clone {
         self.children().filter_map(Self::text)
     }
 
-    pub fn descedant_texts(self) -> impl Iterator<Item = &'doc str> {
+    /// ```
+    /// # use std::borrow::Cow;
+    /// # use robinson::Document;
+    /// let doc = Document::parse(r#"<root>foo<child>bar</child>baz</root>"#).unwrap();
+    ///
+    /// let text = doc.root_element().child_text();
+    ///
+    /// assert_eq!(text, Some(Cow::Owned("foobaz".to_owned())));
+    pub fn child_text(self) -> Option<Cow<'doc, str>> {
+        collect_text(self.child_texts())
+    }
+
+    pub fn descedant_texts(self) -> impl Iterator<Item = &'doc str> + Clone {
         self.descendants().filter_map(Self::text)
     }
+
+    /// ```
+    /// # use std::borrow::Cow;
+    /// # use robinson::Document;
+    /// let doc = Document::parse(r#"<root>foo<child>bar</child>baz</root>"#).unwrap();
+    ///
+    /// let text = doc.root_element().descedant_text();
+    ///
+    /// assert_eq!(text, Some(Cow::Owned("foobarbaz".to_owned())));
+    pub fn descedant_text(self) -> Option<Cow<'doc, str>> {
+        collect_text(self.descedant_texts())
+    }
+}
+
+fn collect_text<'doc>(mut iter: impl Iterator<Item = &'doc str> + Clone) -> Option<Cow<'doc, str>> {
+    let mut cnt = 0;
+    let mut len = 0;
+
+    for text in iter.clone() {
+        cnt += 1;
+        len += text.len();
+    }
+
+    if cnt == 0 {
+        return None;
+    } else if cnt == 1 {
+        let text = iter.next().unwrap();
+
+        return Some(Cow::Borrowed(text));
+    }
+
+    let mut buf = String::with_capacity(len);
+
+    for text in iter {
+        buf.push_str(text);
+    }
+
+    Some(Cow::Owned(buf))
 }
 
 #[derive(Debug, Clone)]
