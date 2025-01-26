@@ -346,8 +346,7 @@ impl<'input> Tokenizer<'input> {
         loop {
             match self.text.as_bytes().get(pos) {
                 Some(byte) if *byte < 128 => {
-                    if matches!(*byte, b'A'..=b'Z' | b'a'..=b'z'| b'0'..=b'9'| b'_' | b'-' | b'.' | b':')
-                    {
+                    if CHECK_XML_NAME & (1 << byte) != 0 {
                         pos += 1;
                     } else {
                         break;
@@ -392,7 +391,7 @@ impl<'input> Tokenizer<'input> {
                 }
 
                 Some(byte) if *byte < 128 => {
-                    if matches!(*byte, b'A'..=b'Z' | b'a'..=b'z'| b'0'..=b'9'| b'_' | b'-' | b'.') {
+                    if CHECK_XML_NAME & (1 << byte) != 0 {
                         pos += 1;
                     } else {
                         break;
@@ -521,6 +520,21 @@ impl<'input> Tokenizer<'input> {
         Ok(Reference::Char(char_))
     }
 }
+
+/*
+import string
+
+xml_name = set(string.ascii_letters + string.digits + "_-.:")
+
+mask = 0
+
+for idx in range(128):
+    if chr(idx) in xml_name:
+        mask |= 1 << idx
+
+print(f"static CHECK_XML_NAME: u128 = 0b{mask:0128b};")
+*/
+static CHECK_XML_NAME: u128 = 0b00000111111111111111111111111110100001111111111111111111111111100000011111111111011000000000000000000000000000000000000000000000;
 
 #[cold]
 #[inline(never)]

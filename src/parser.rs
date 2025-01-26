@@ -272,18 +272,24 @@ impl<'input> Parser<'input> {
         self.append_node(None, Some(id))
     }
 
-    pub fn append_text(
-        &mut self,
-        tokenizer: &mut Tokenizer<'input>,
-        mut text: &'input str,
-    ) -> Result {
-        let mut pos = memchr2(b'&', b'\r', text.as_bytes());
+    pub fn append_text(&mut self, tokenizer: &mut Tokenizer<'input>, text: &'input str) -> Result {
+        let pos = memchr2(b'&', b'\r', text.as_bytes());
 
         if pos.is_none() {
             self.append_text_node(StringData::borrowed(text))?;
             return Ok(());
         }
 
+        self.append_text_impl(tokenizer, text, pos)
+    }
+
+    #[inline(never)]
+    fn append_text_impl(
+        &mut self,
+        tokenizer: &mut Tokenizer<'input>,
+        mut text: &'input str,
+        mut pos: Option<usize>,
+    ) -> Result {
         let mut buf = String::new();
         let mut was_cr = false;
 
@@ -362,14 +368,19 @@ impl<'input> Parser<'input> {
         Ok(())
     }
 
-    pub fn append_cdata(&mut self, mut cdata: &'input str) -> Result {
-        let mut pos = memchr(b'\r', cdata.as_bytes());
+    pub fn append_cdata(&mut self, cdata: &'input str) -> Result {
+        let pos = memchr(b'\r', cdata.as_bytes());
 
         if pos.is_none() {
             self.append_text_node(StringData::borrowed(cdata))?;
             return Ok(());
         }
 
+        self.append_cdata_impl(cdata, pos)
+    }
+
+    #[inline(never)]
+    fn append_cdata_impl(&mut self, mut cdata: &'input str, mut pos: Option<usize>) -> Result {
         let mut buf = String::new();
 
         while let Some(pos1) = pos {
@@ -411,6 +422,7 @@ impl<'input> Parser<'input> {
         Ok(StringData::owned(buf.into_boxed_str()))
     }
 
+    #[inline(never)]
     fn normalize_attribute_value_impl(
         &mut self,
         tokenizer: &mut Tokenizer<'input>,
@@ -515,11 +527,10 @@ impl<'input> Parser<'input> {
             }
         }
 
-        let range = self.namespaces_offset..self.doc.namespaces.len();
+        let new_len = self.doc.namespaces.len();
+        let old_len = replace(&mut self.namespaces_offset, new_len);
 
-        self.namespaces_offset = self.doc.namespaces.len();
-
-        Ok(range)
+        Ok(old_len..new_len)
     }
 
     fn resolve_attributes(&mut self, namespaces: Range<u32>) -> Result<Range<u32>> {

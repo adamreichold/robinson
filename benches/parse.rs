@@ -18,6 +18,7 @@ macro_rules! bench {
     };
 }
 
+bench!(gigantic);
 bench!(huge);
 bench!(large);
 bench!(medium);
