@@ -31,21 +31,21 @@ use crate::{Attribute, Document, Error as XmlError, Node};
 #[cfg(feature = "raw-node")]
 pub use raw_node::RawNode;
 
-pub fn from_str<T>(text: &str) -> Result<T, Error>
+pub fn from_str<T>(text: &str) -> Result<T, Box<Error>>
 where
     T: de::DeserializeOwned,
 {
     defaults().from_str(text)
 }
 
-pub fn from_doc<'de, 'input, T>(document: &'de Document<'input>) -> Result<T, Error>
+pub fn from_doc<'de, 'input, T>(document: &'de Document<'input>) -> Result<T, Box<Error>>
 where
     T: de::Deserialize<'de>,
 {
     defaults().from_doc(document)
 }
 
-pub fn from_node<'de, 'input, T>(node: Node<'de, 'input>) -> Result<T, Error>
+pub fn from_node<'de, 'input, T>(node: Node<'de, 'input>) -> Result<T, Box<Error>>
 where
     T: de::Deserialize<'de>,
 {
@@ -54,7 +54,7 @@ where
 
 pub trait Options: Sized {
     #[allow(clippy::wrong_self_convention)]
-    fn from_str<T>(self, text: &str) -> Result<T, Error>
+    fn from_str<T>(self, text: &str) -> Result<T, Box<Error>>
     where
         T: de::DeserializeOwned,
     {
@@ -63,7 +63,7 @@ pub trait Options: Sized {
     }
 
     #[allow(clippy::wrong_self_convention)]
-    fn from_doc<'de, 'input, T>(self, document: &'de Document<'input>) -> Result<T, Error>
+    fn from_doc<'de, 'input, T>(self, document: &'de Document<'input>) -> Result<T, Box<Error>>
     where
         T: de::Deserialize<'de>,
     {
@@ -72,7 +72,7 @@ pub trait Options: Sized {
     }
 
     #[allow(clippy::wrong_self_convention)]
-    fn from_node<'de, 'input, T>(self, node: Node<'de, 'input>) -> Result<T, Error>
+    fn from_node<'de, 'input, T>(self, node: Node<'de, 'input>) -> Result<T, Box<Error>>
     where
         T: de::Deserialize<'de>,
     {
@@ -246,16 +246,16 @@ where
         }
     }
 
-    fn node(&self) -> Result<Node<'de, 'input>, Error> {
+    fn node(&self) -> Result<Node<'de, 'input>, Box<Error>> {
         match self.source {
             Source::Node(node) => Ok(node),
-            Source::Attribute(_) | Source::Text(_) => Err(Error::MissingNode),
+            Source::Attribute(_) | Source::Text(_) => Error::MissingNode.into(),
         }
     }
 
     fn children(
         &self,
-    ) -> Result<impl Iterator<Item = Source<'de, 'input>> + use<'de, 'input, O>, Error> {
+    ) -> Result<impl Iterator<Item = Source<'de, 'input>> + use<'de, 'input, O>, Box<Error>> {
         let node = self.node()?;
 
         let children = node
@@ -268,7 +268,7 @@ where
 
     fn children_and_attributes(
         &self,
-    ) -> Result<impl Iterator<Item = Source<'de, 'input>> + use<'de, 'input, O>, Error> {
+    ) -> Result<impl Iterator<Item = Source<'de, 'input>> + use<'de, 'input, O>, Box<Error>> {
         let node = self.node()?;
 
         let children = node
@@ -283,7 +283,7 @@ where
         Ok(children.chain(attributes).chain(text))
     }
 
-    fn siblings(&self) -> Result<impl Iterator<Item = Node<'de, 'de>> + use<'de, O>, Error> {
+    fn siblings(&self) -> Result<impl Iterator<Item = Node<'de, 'de>> + use<'de, O>, Box<Error>> {
         let node = self.node()?;
         let name = node.name();
 
@@ -306,11 +306,14 @@ where
         }
     }
 
-    fn parse<T>(&self, err: fn(T::Err) -> Error) -> Result<T, Error>
+    fn parse<T>(&self, map_err: fn(T::Err) -> Error) -> Result<T, Box<Error>>
     where
         T: FromStr,
     {
-        self.text().trim().parse().map_err(err)
+        self.text()
+            .trim()
+            .parse()
+            .map_err(|err| map_err(err).into())
     }
 }
 
@@ -318,7 +321,7 @@ impl<'de, O> de::Deserializer<'de> for Deserializer<'de, '_, '_, O>
 where
     O: Options,
 {
-    type Error = Error;
+    type Error = Box<Error>;
 
     fn deserialize_bool<V>(self, visitor: V) -> Result<V::Value, Self::Error>
     where
@@ -425,14 +428,14 @@ where
     where
         V: de::Visitor<'de>,
     {
-        Err(Error::NotSupported)
+        Error::NotSupported.into()
     }
 
     fn deserialize_byte_buf<V>(self, _visitor: V) -> Result<V::Value, Self::Error>
     where
         V: de::Visitor<'de>,
     {
-        Err(Error::NotSupported)
+        Error::NotSupported.into()
     }
 
     fn deserialize_option<V>(self, visitor: V) -> Result<V::Value, Self::Error>
@@ -574,7 +577,7 @@ where
     where
         V: de::Visitor<'de>,
     {
-        Err(Error::NotSupported)
+        Error::NotSupported.into()
     }
 
     fn deserialize_ignored_any<V>(self, visitor: V) -> Result<V::Value, Self::Error>
@@ -599,7 +602,7 @@ where
     I: Iterator<Item = Node<'de, 'de>>,
     O: Options,
 {
-    type Error = Error;
+    type Error = Box<Error>;
 
     fn next_element_seed<T>(&mut self, seed: T) -> Result<Option<T::Value>, Self::Error>
     where
@@ -635,7 +638,7 @@ where
     I: Iterator<Item = Source<'de, 'input>>,
     O: Options,
 {
-    type Error = Error;
+    type Error = Box<Error>;
 
     fn next_key_seed<K>(&mut self, seed: K) -> Result<Option<K::Value>, Self::Error>
     where
@@ -692,7 +695,7 @@ where
     I: Iterator<Item = Source<'de, 'input>>,
     O: Options,
 {
-    type Error = Error;
+    type Error = Box<Error>;
     type Variant = Deserializer<'de, 'input, 'temp, O>;
 
     fn variant_seed<V>(mut self, seed: V) -> Result<(V::Value, Self::Variant), Self::Error>
@@ -721,7 +724,7 @@ impl<'de, O> de::VariantAccess<'de> for Deserializer<'de, '_, '_, O>
 where
     O: Options,
 {
-    type Error = Error;
+    type Error = Box<Error>;
 
     fn unit_variant(self) -> Result<(), Self::Error> {
         Ok(())
@@ -766,9 +769,19 @@ pub enum Error {
     Custom(String),
 }
 
-impl de::Error for Error {
+impl<T> From<Error> for Result<T, Box<Error>> {
+    #[cold]
+    #[inline(never)]
+    fn from(err: Error) -> Self {
+        Err(Box::new(err))
+    }
+}
+
+impl de::Error for Box<Error> {
+    #[cold]
+    #[inline(never)]
     fn custom<T: fmt::Display>(msg: T) -> Self {
-        Self::Custom(msg.to_string())
+        Box::new(Error::Custom(msg.to_string()))
     }
 }
 
@@ -815,7 +828,7 @@ mod tests {
         assert!(val);
 
         let res = from_str::<bool>("<root>foobar</root>");
-        assert!(matches!(res, Err(Error::ParseBool(_err))));
+        assert!(matches!(*res.unwrap_err(), Error::ParseBool(_err)));
     }
 
     #[test]
@@ -826,7 +839,7 @@ mod tests {
         assert_eq!(val, 'y');
 
         let res = from_str::<char>("<root>xyz</root>");
-        assert!(matches!(res, Err(Error::ParseChar(_err))));
+        assert!(matches!(*res.unwrap_err(), Error::ParseChar(_err)));
     }
 
     #[test]
