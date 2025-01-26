@@ -9,14 +9,21 @@ readme = "README.md"
 exclude = ["benches"]
 repository = "https://github.com/adamreichold/robinson"
 license = "MIT OR Apache-2.0"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2024"
 
+[features]
+serde = ["dep:bit-set", "dep:serde"]
+raw-node = ["serde"]
+
 [dependencies]
+bit-set = { version = "0.8", optional = true }
 memchr = "2"
+serde = { version = "1", optional = true }
 
 [dev-dependencies]
 pretty_assertions = "1"
+serde = { version = "1", features = ["derive"] }
 
 [workspace]
 members = ["fuzz"]

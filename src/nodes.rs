@@ -1,9 +1,10 @@
 use std::borrow::Cow;
+use std::cmp::Ordering;
 use std::fmt;
+use std::hash::{Hash, Hasher};
 use std::iter::{Enumerate, from_fn};
 use std::num::NonZeroU32;
 use std::ops::Range;
-use std::ptr::eq;
 use std::slice::Iter;
 
 use crate::{
@@ -39,11 +40,40 @@ pub struct Node<'doc, 'input> {
 
 impl PartialEq for Node<'_, '_> {
     fn eq(&self, other: &Self) -> bool {
-        self.id == other.id && eq(self.doc, other.doc)
+        let doc = self.doc as *const Document;
+        let other_doc = other.doc as *const Document;
+
+        (self.id, doc) == (other.id, other_doc)
     }
 }
 
 impl Eq for Node<'_, '_> {}
+
+impl PartialOrd for Node<'_, '_> {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for Node<'_, '_> {
+    fn cmp(&self, other: &Self) -> Ordering {
+        let doc = self.doc as *const Document;
+        let other_doc = other.doc as *const Document;
+
+        (self.id, doc).cmp(&(other.id, other_doc))
+    }
+}
+
+impl Hash for Node<'_, '_> {
+    fn hash<H>(&self, hasher: &mut H)
+    where
+        H: Hasher,
+    {
+        let doc = self.doc as *const Document;
+
+        (self.id, doc).hash(hasher);
+    }
+}
 
 impl<'doc, 'input> Node<'doc, 'input> {
     pub fn id(self) -> NodeId {
@@ -80,12 +110,15 @@ impl<'doc, 'input> Node<'doc, 'input> {
     where
         F: Fn(Self) -> Option<Self> + Clone,
     {
-        let mut current = Some(self);
+        let mut next = Some(self);
 
-        from_fn(move || {
-            let next = f(current?);
-            current = next;
-            next
+        from_fn(move || match next {
+            Some(next1) => {
+                next = f(next1);
+
+                Some(next1)
+            }
+            None => None,
         })
     }
 

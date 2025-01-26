@@ -9,6 +9,8 @@ mod error;
 mod namespaces;
 mod nodes;
 mod parser;
+#[cfg(feature = "serde")]
+pub mod serde;
 mod strings;
 mod tokenizer;
 
