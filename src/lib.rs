@@ -15,6 +15,7 @@ mod strings;
 mod tokenizer;
 
 use std::fmt;
+use std::num::NonZeroUsize;
 
 use attributes::AttributeData;
 use namespaces::{Namespace, Namespaces};
@@ -32,6 +33,12 @@ pub struct Document<'input> {
     texts: Vec<StringData<'input>>,
     attributes: Vec<AttributeData<'input>>,
     namespaces: Namespaces<'input>,
+}
+
+impl Document<'_> {
+    pub fn len(&self) -> NonZeroUsize {
+        NonZeroUsize::new(self.nodes.len()).unwrap()
+    }
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]

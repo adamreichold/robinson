@@ -9,15 +9,15 @@ readme = "README.md"
 exclude = ["benches"]
 repository = "https://github.com/adamreichold/robinson"
 license = "MIT OR Apache-2.0"
-version = "0.2.2"
+version = "0.2.3"
 edition = "2024"
 
 [features]
-serde = ["dep:bit-set", "dep:serde"]
+serde = ["dep:bit-vec", "dep:serde"]
 raw-node = ["serde"]
 
 [dependencies]
-bit-set = { version = "0.8", optional = true }
+bit-vec = { version = "0.8", optional = true }
 memchr = "2"
 serde = { version = "1", optional = true }
 

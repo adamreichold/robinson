@@ -45,6 +45,10 @@ pub struct Attribute<'doc, 'input> {
 }
 
 impl<'doc, 'input> Attribute<'doc, 'input> {
+    pub fn document(self) -> &'doc Document<'input> {
+        self.doc
+    }
+
     pub fn name(self) -> Name<'doc, 'input> {
         self.data.name.get(self.doc)
     }

@@ -76,6 +76,10 @@ impl Hash for Node<'_, '_> {
 }
 
 impl<'doc, 'input> Node<'doc, 'input> {
+    pub fn document(self) -> &'doc Document<'input> {
+        self.doc
+    }
+
     pub fn id(self) -> NodeId {
         self.id
     }

@@ -20,10 +20,10 @@ use std::error::Error as StdError;
 use std::fmt;
 use std::iter::{Peekable, once};
 use std::marker::PhantomData;
-use std::num::{ParseFloatError, ParseIntError};
+use std::num::{NonZeroUsize, ParseFloatError, ParseIntError};
 use std::str::{FromStr, ParseBoolError};
 
-use bit_set::BitSet;
+use bit_vec::BitVec;
 use serde::de;
 
 use crate::{Attribute, Document, Error as XmlError, Node};
@@ -76,11 +76,14 @@ pub trait Options: Sized {
     where
         T: de::Deserialize<'de>,
     {
+        let len = node.document().len();
+
         let deserializer = Deserializer {
             source: Source::Node(node),
-            temp: &mut Temp::default(),
+            temp: &mut Temp::new(len),
             options: PhantomData::<Self>,
         };
+
         T::deserialize(deserializer)
     }
 
@@ -168,10 +171,18 @@ enum Source<'de, 'input> {
     Text(Node<'de, 'input>),
 }
 
-#[derive(Default)]
 struct Temp {
-    visited: BitSet<usize>,
+    visited: BitVec,
     buffer: String,
+}
+
+impl Temp {
+    fn new(len: NonZeroUsize) -> Self {
+        Self {
+            visited: BitVec::from_elem(len.get(), false),
+            buffer: String::new(),
+        }
+    }
 }
 
 impl<'de, 'input, O> Deserializer<'de, 'input, '_, O>
@@ -611,7 +622,7 @@ where
         match self.source.next() {
             None => Ok(None),
             Some(node) => {
-                self.temp.visited.insert(node.id().get());
+                self.temp.visited.set(node.id().get(), true);
 
                 let deserializer = Deserializer {
                     source: Source::Node(node),
@@ -649,7 +660,7 @@ where
                 None => return Ok(None),
                 Some(source) => {
                     if let Source::Node(node) = source {
-                        if self.temp.visited.contains(node.id().get()) {
+                        if self.temp.visited[node.id().get()] {
                             self.source.next().unwrap();
                             continue;
                         }
