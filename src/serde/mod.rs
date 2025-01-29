@@ -23,7 +23,6 @@ use std::marker::PhantomData;
 use std::num::{NonZeroUsize, ParseFloatError, ParseIntError};
 use std::str::{FromStr, ParseBoolError};
 
-use bit_vec::BitVec;
 use serde::de;
 
 use crate::{Attribute, Document, Error as XmlError, Node};
@@ -172,18 +171,36 @@ enum Source<'de, 'input> {
 }
 
 struct Temp {
-    visited: BitVec,
+    visited: Box<[usize]>,
     buffer: String,
 }
 
 impl Temp {
     fn new(len: NonZeroUsize) -> Self {
+        let len = len.get().div_ceil(USIZE_BITS);
+
         Self {
-            visited: BitVec::from_elem(len.get(), false),
+            visited: (0..len).map(|_idx| 0).collect(),
             buffer: String::new(),
         }
     }
+
+    fn set_visited(&mut self, node: usize) {
+        let idx = node / USIZE_BITS;
+        let bit = node % USIZE_BITS;
+
+        self.visited[idx] |= 1 << bit;
+    }
+
+    fn is_visited(&self, node: usize) -> bool {
+        let idx = node / USIZE_BITS;
+        let bit = node % USIZE_BITS;
+
+        self.visited[idx] & (1 << bit) != 0
+    }
 }
+
+const USIZE_BITS: usize = usize::BITS as usize;
 
 impl<'de, 'input, O> Deserializer<'de, 'input, '_, O>
 where
@@ -622,7 +639,7 @@ where
         match self.source.next() {
             None => Ok(None),
             Some(node) => {
-                self.temp.visited.set(node.id().get(), true);
+                self.temp.set_visited(node.id().get());
 
                 let deserializer = Deserializer {
                     source: Source::Node(node),
@@ -660,7 +677,7 @@ where
                 None => return Ok(None),
                 Some(source) => {
                     if let Source::Node(node) = source {
-                        if self.temp.visited[node.id().get()] {
+                        if self.temp.is_visited(node.id().get()) {
                             self.source.next().unwrap();
                             continue;
                         }
