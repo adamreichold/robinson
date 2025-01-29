@@ -5,16 +5,29 @@ use crate::{
     strings::StringData,
 };
 
-#[derive(Clone, Default)]
+#[derive(Clone)]
 pub struct Namespaces<'input> {
+    uris: Box<[StringData<'input>]>,
+}
+
+impl Namespaces<'_> {
+    pub fn get(&self, namespace: Namespace) -> &str {
+        self.uris[namespace.0 as usize].as_ref()
+    }
+}
+
+#[derive(Default)]
+pub struct NamespacesBuilder<'input> {
     data: Vec<NamespaceData<'input>>,
     sorted: Vec<Namespace>,
     parsed: Vec<Namespace>,
 }
 
-impl<'input> Namespaces<'input> {
-    pub fn get(&self, namespace: Namespace) -> &str {
-        self.data[namespace.0 as usize].uri.as_ref()
+impl<'input> NamespacesBuilder<'input> {
+    pub fn build(self) -> Namespaces<'input> {
+        Namespaces {
+            uris: self.data.into_iter().map(|data| data.uri).collect(),
+        }
     }
 
     pub fn find(&self, range: Range<u32>, prefix: &str) -> Result<Option<Namespace>> {
@@ -92,12 +105,6 @@ impl<'input> Namespaces<'input> {
         self.parsed.push(namespace);
 
         Ok(())
-    }
-
-    pub fn shrink_to_fit(&mut self) {
-        self.data.shrink_to_fit();
-        self.sorted = Vec::new();
-        self.parsed = Vec::new();
     }
 }
 

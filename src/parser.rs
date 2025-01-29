@@ -4,7 +4,7 @@ use std::ops::Range;
 use memchr::{memchr, memchr_iter, memchr2, memchr3};
 
 use crate::{
-    Document, NameData,
+    Document, DocumentBuilder, NameData,
     attributes::AttributeData,
     error::{ErrorKind, Result},
     namespaces::NamespaceData,
@@ -24,24 +24,18 @@ impl<'input> Document<'input> {
             return ErrorKind::UnclosedRootElement.into();
         }
 
-        let mut doc = parser.doc;
+        let doc = parser.doc.build();
 
         if !doc.root().children().any(|child| child.is_element()) {
             return ErrorKind::MissingRootElement.into();
         }
-
-        doc.nodes.shrink_to_fit();
-        doc.elements.shrink_to_fit();
-        doc.texts.shrink_to_fit();
-        doc.attributes.shrink_to_fit();
-        doc.namespaces.shrink_to_fit();
 
         Ok(doc)
     }
 }
 
 pub struct Parser<'input> {
-    doc: Document<'input>,
+    doc: DocumentBuilder<'input>,
     element: Option<CurrElement<'input>>,
     parent: NodeId,
     subtree: Vec<NodeId>,
@@ -77,7 +71,7 @@ impl<'input> Parser<'input> {
         let nodes = memchr_iter(b'<', text.as_bytes()).count();
         let attributes = memchr_iter(b'=', text.as_bytes()).count();
 
-        let mut doc = Document {
+        let mut doc = DocumentBuilder {
             nodes: Vec::with_capacity(nodes),
             elements: Vec::with_capacity(nodes / 2),
             texts: Vec::with_capacity(nodes / 2),

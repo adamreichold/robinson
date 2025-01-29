@@ -18,7 +18,7 @@ use std::fmt;
 use std::num::NonZeroUsize;
 
 use attributes::AttributeData;
-use namespaces::{Namespace, Namespaces};
+use namespaces::{Namespace, Namespaces, NamespacesBuilder};
 use nodes::{ElementData, NodeData};
 use strings::StringData;
 
@@ -28,16 +28,36 @@ pub use nodes::{Children, Descendants, Node, NodeId};
 
 #[derive(Clone)]
 pub struct Document<'input> {
-    nodes: Vec<NodeData>,
-    elements: Vec<ElementData<'input>>,
-    texts: Vec<StringData<'input>>,
-    attributes: Vec<AttributeData<'input>>,
+    nodes: Box<[NodeData]>,
+    elements: Box<[ElementData<'input>]>,
+    texts: Box<[StringData<'input>]>,
+    attributes: Box<[AttributeData<'input>]>,
     namespaces: Namespaces<'input>,
 }
 
 impl Document<'_> {
     pub fn len(&self) -> NonZeroUsize {
         NonZeroUsize::new(self.nodes.len()).unwrap()
+    }
+}
+
+struct DocumentBuilder<'input> {
+    nodes: Vec<NodeData>,
+    elements: Vec<ElementData<'input>>,
+    texts: Vec<StringData<'input>>,
+    attributes: Vec<AttributeData<'input>>,
+    namespaces: NamespacesBuilder<'input>,
+}
+
+impl<'input> DocumentBuilder<'input> {
+    fn build(self) -> Document<'input> {
+        Document {
+            nodes: self.nodes.into_boxed_slice(),
+            elements: self.elements.into_boxed_slice(),
+            texts: self.texts.into_boxed_slice(),
+            attributes: self.attributes.into_boxed_slice(),
+            namespaces: self.namespaces.build(),
+        }
     }
 }
 
