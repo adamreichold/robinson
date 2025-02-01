@@ -5,31 +5,35 @@ use crate::{
     strings::StringData,
 };
 
-pub struct Namespaces<'input> {
+pub(crate) struct Namespaces<'input> {
     uris: Box<[StringData<'input>]>,
 }
 
 impl Namespaces<'_> {
-    pub fn get(&self, namespace: Namespace) -> &str {
+    pub(crate) fn get(&self, namespace: Namespace) -> &str {
         self.uris[namespace.0 as usize].as_ref()
     }
 }
 
 #[derive(Default)]
-pub struct NamespacesBuilder<'input> {
+pub(crate) struct NamespacesBuilder<'input> {
     data: Vec<NamespaceData<'input>>,
     sorted: Vec<Namespace>,
     parsed: Vec<Namespace>,
 }
 
 impl<'input> NamespacesBuilder<'input> {
-    pub fn build(self) -> Namespaces<'input> {
+    pub(crate) fn build(self) -> Namespaces<'input> {
         Namespaces {
             uris: self.data.into_iter().map(|data| data.uri).collect(),
         }
     }
 
-    pub fn find(&self, range: &Range<u32>, prefix: Option<&str>) -> Result<Option<Namespace>> {
+    pub(crate) fn find(
+        &self,
+        range: &Range<u32>,
+        prefix: Option<&str>,
+    ) -> Result<Option<Namespace>> {
         let namespace = self.parsed[range.start as usize..range.end as usize]
             .iter()
             .find(|namespace| self.data[namespace.0 as usize].name == prefix);
@@ -43,11 +47,11 @@ impl<'input> NamespacesBuilder<'input> {
         }
     }
 
-    pub fn len(&self) -> u32 {
+    pub(crate) fn len(&self) -> u32 {
         self.parsed.len() as u32
     }
 
-    pub fn push(&mut self, data: NamespaceData<'input>) -> Result<Namespace> {
+    pub(crate) fn push(&mut self, data: NamespaceData<'input>) -> Result<Namespace> {
         debug_assert_ne!(data.name, Some(""));
 
         if self.parsed.len() > u32::MAX as usize {
@@ -79,7 +83,7 @@ impl<'input> NamespacesBuilder<'input> {
         Ok(namespace)
     }
 
-    pub fn push_ref(&mut self, range: &Range<u32>, idx: u32) -> Result {
+    pub(crate) fn push_ref(&mut self, range: &Range<u32>, idx: u32) -> Result {
         let namespace = self.parsed[idx as usize];
 
         let name = &self.data[namespace.0 as usize].name;
@@ -102,12 +106,12 @@ impl<'input> NamespacesBuilder<'input> {
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Namespace(u16);
+pub(crate) struct Namespace(u16);
 
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
-pub struct NamespaceData<'input> {
-    pub name: Option<&'input str>,
-    pub uri: StringData<'input>,
+pub(crate) struct NamespaceData<'input> {
+    pub(crate) name: Option<&'input str>,
+    pub(crate) uri: StringData<'input>,
 }
 
 const _SIZE_OF_NAMESPACE_DATA: () =

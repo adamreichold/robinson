@@ -34,7 +34,7 @@ impl<'input> Document<'input> {
     }
 }
 
-pub struct Parser<'input> {
+pub(crate) struct Parser<'input> {
     doc: DocumentBuilder<'input>,
     element: Option<CurrElement<'input>>,
     parent: NodeId,
@@ -108,13 +108,17 @@ impl<'input> Parser<'input> {
         })
     }
 
-    pub fn open_element(&mut self, prefix: Option<&'input str>, local: &'input str) -> Result {
+    pub(crate) fn open_element(
+        &mut self,
+        prefix: Option<&'input str>,
+        local: &'input str,
+    ) -> Result {
         self.element = Some(CurrElement { prefix, local });
 
         Ok(())
     }
 
-    pub fn push_attribute(
+    pub(crate) fn push_attribute(
         &mut self,
         tokenizer: &mut Tokenizer<'input>,
         prefix: Option<&'input str>,
@@ -146,7 +150,7 @@ impl<'input> Parser<'input> {
         Ok(())
     }
 
-    pub fn close_element(&mut self, element_end: ElementEnd<'input>) -> Result {
+    pub(crate) fn close_element(&mut self, element_end: ElementEnd<'input>) -> Result {
         let namespaces = self.resolve_namespaces()?;
         let attributes = self.resolve_attributes(&namespaces)?;
 
@@ -259,7 +263,11 @@ impl<'input> Parser<'input> {
         Ok(())
     }
 
-    pub fn append_text(&mut self, tokenizer: &mut Tokenizer<'input>, text: &'input str) -> Result {
+    pub(crate) fn append_text(
+        &mut self,
+        tokenizer: &mut Tokenizer<'input>,
+        text: &'input str,
+    ) -> Result {
         let pos = memchr2(b'&', b'\r', text.as_bytes());
 
         if pos.is_none() {
@@ -355,7 +363,7 @@ impl<'input> Parser<'input> {
         Ok(())
     }
 
-    pub fn append_cdata(&mut self, cdata: &'input str) -> Result {
+    pub(crate) fn append_cdata(&mut self, cdata: &'input str) -> Result {
         let pos = memchr(b'\r', cdata.as_bytes());
 
         if pos.is_none() {
@@ -551,7 +559,7 @@ impl<'input> Parser<'input> {
         Ok(old_len as u32..new_len as u32)
     }
 
-    pub fn push_entity(&mut self, name: &'input str, value: &'input str) {
+    pub(crate) fn push_entity(&mut self, name: &'input str, value: &'input str) {
         if let Err(idx) = self
             .entities
             .binary_search_by_key(&name, |entity| entity.name)

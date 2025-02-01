@@ -8,7 +8,7 @@ use crate::{
     strings::{split_first, split_once},
 };
 
-pub struct Tokenizer<'input> {
+pub(crate) struct Tokenizer<'input> {
     text: &'input str,
     init_text: &'input str,
     pi: Finder<'static>,
@@ -17,7 +17,7 @@ pub struct Tokenizer<'input> {
 }
 
 #[derive(Clone, Copy)]
-pub enum ElementEnd<'input> {
+pub(crate) enum ElementEnd<'input> {
     Empty,
     Close {
         prefix: Option<&'input str>,
@@ -27,13 +27,13 @@ pub enum ElementEnd<'input> {
 }
 
 #[derive(Clone, Copy)]
-pub enum Reference<'input> {
+pub(crate) enum Reference<'input> {
     Char(char),
     Entity(&'input str),
 }
 
 impl<'input> Tokenizer<'input> {
-    pub fn new(text: &'input str) -> Self {
+    pub(crate) fn new(text: &'input str) -> Self {
         Self {
             text,
             init_text: text,
@@ -43,7 +43,7 @@ impl<'input> Tokenizer<'input> {
         }
     }
 
-    pub fn with_text<F, T>(&mut self, text: &mut &'input str, f: F) -> Result<T>
+    pub(crate) fn with_text<F, T>(&mut self, text: &mut &'input str, f: F) -> Result<T>
     where
         F: FnOnce(&mut Self) -> Result<T>,
     {
@@ -127,7 +127,7 @@ impl<'input> Tokenizer<'input> {
         }
     }
 
-    pub fn parse(&mut self, parser: &mut Parser<'input>) -> Result {
+    pub(crate) fn parse(&mut self, parser: &mut Parser<'input>) -> Result {
         self.parse_document(parser).map_err(|err| self.set_pos(err))
     }
 
@@ -268,7 +268,7 @@ impl<'input> Tokenizer<'input> {
         }
     }
 
-    pub fn parse_content(&mut self, parser: &mut Parser<'input>) -> Result {
+    pub(crate) fn parse_content(&mut self, parser: &mut Parser<'input>) -> Result {
         loop {
             if self.try_literal("<![CDATA[") {
                 self.parse_cdata(parser)?;
@@ -478,7 +478,7 @@ impl<'input> Tokenizer<'input> {
         Ok((prefix, local, value))
     }
 
-    pub fn parse_reference(&mut self) -> Result<Reference<'input>> {
+    pub(crate) fn parse_reference(&mut self) -> Result<Reference<'input>> {
         let Some((value, rest)) = split_once(self.text, b';') else {
             return ErrorKind::ExpectedLiteral(";").into();
         };

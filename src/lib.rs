@@ -1,7 +1,8 @@
 #![deny(
     unsafe_code,
     missing_debug_implementations,
-    missing_copy_implementations
+    missing_copy_implementations,
+    unreachable_pub
 )]
 
 mod attributes;

@@ -79,7 +79,7 @@ where
     }
 }
 
-pub fn deserialize_struct<'de, 'input, 'temp, O, F, R>(
+pub(super) fn deserialize_struct<'de, 'input, 'temp, O, F, R>(
     this: Deserializer<'de, 'input, 'temp, O>,
     name: &'static str,
     f: F,

@@ -2,7 +2,7 @@ use std::error::Error as StdError;
 use std::fmt;
 use std::result::Result as StdResult;
 
-pub type Result<T = ()> = StdResult<T, Box<Error>>;
+pub(crate) type Result<T = ()> = StdResult<T, Box<Error>>;
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum ErrorKind {

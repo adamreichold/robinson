@@ -59,9 +59,9 @@ impl<'doc, 'input> Attribute<'doc, 'input> {
 }
 
 #[derive(Debug)]
-pub struct AttributeData<'input> {
-    pub name: NameData<'input>,
-    pub value: StringData<'input>,
+pub(crate) struct AttributeData<'input> {
+    pub(crate) name: NameData<'input>,
+    pub(crate) value: StringData<'input>,
 }
 
 const _SIZE_OF_ATTRIBUTE_DATA: () =

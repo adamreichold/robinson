@@ -9,7 +9,7 @@ use std::ptr::{NonNull, slice_from_raw_parts_mut};
 use memchr::memchr;
 
 #[derive(Debug)]
-pub struct StringData<'input> {
+pub(crate) struct StringData<'input> {
     len: usize,
     ptr: NonNull<u8>,
     marker: PhantomData<Cow<'input, str>>,
@@ -25,11 +25,11 @@ const _SIZE_OF_STRING_DATA: () =
 const TAG: usize = 1 << (usize::BITS - 1);
 
 impl<'input> StringData<'input> {
-    pub fn borrowed(val: &'input str) -> Self {
+    pub(crate) fn borrowed(val: &'input str) -> Self {
         Self::from_raw_parts::<false>(val.len(), val.as_ptr() as *mut u8)
     }
 
-    pub fn owned(val: Box<str>) -> Self {
+    pub(crate) fn owned(val: Box<str>) -> Self {
         Self::from_raw_parts::<true>(val.len(), Box::into_raw(val) as *mut u8)
     }
 
@@ -102,7 +102,7 @@ impl Ord for StringData<'_> {
 }
 
 #[inline]
-pub fn split_first<const N: usize>(str_: &str, bytes: [u8; N]) -> Option<(u8, &str)> {
+pub(crate) fn split_first<const N: usize>(str_: &str, bytes: [u8; N]) -> Option<(u8, &str)> {
     assert!(bytes.is_ascii());
 
     if let Some(&first) = str_.as_bytes().first() {
@@ -120,7 +120,7 @@ pub fn split_first<const N: usize>(str_: &str, bytes: [u8; N]) -> Option<(u8, &s
 }
 
 #[inline]
-pub fn split_once(str_: &str, delim: u8) -> Option<(&str, &str)> {
+pub(crate) fn split_once(str_: &str, delim: u8) -> Option<(&str, &str)> {
     assert!(delim.is_ascii());
 
     let pos = memchr(delim, str_.as_bytes())?;

@@ -298,21 +298,21 @@ fn collect_text<'doc>(mut iter: impl Iterator<Item = &'doc str> + Clone) -> Opti
 }
 
 #[derive(Debug)]
-pub struct NodeData {
-    pub element: Option<NodeId>,
-    pub text: Option<NodeId>,
-    pub parent: Option<NodeId>,
-    pub prev_sibling: Option<NodeId>,
-    pub next_subtree: Option<NodeId>,
-    pub last_child: Option<NodeId>,
+pub(crate) struct NodeData {
+    pub(crate) element: Option<NodeId>,
+    pub(crate) text: Option<NodeId>,
+    pub(crate) parent: Option<NodeId>,
+    pub(crate) prev_sibling: Option<NodeId>,
+    pub(crate) next_subtree: Option<NodeId>,
+    pub(crate) last_child: Option<NodeId>,
 }
 
 const _SIZE_OF_NODE_DATA: () = assert!(size_of::<NodeData>() == 3 * size_of::<usize>());
 
 #[derive(Debug)]
-pub struct ElementData<'input> {
-    pub name: NameData<'input>,
-    pub attributes: Range<u32>,
+pub(crate) struct ElementData<'input> {
+    pub(crate) name: NameData<'input>,
+    pub(crate) attributes: Range<u32>,
 }
 
 const _SIZE_OF_ELEMENT_DATA: () =
