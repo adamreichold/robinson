@@ -49,12 +49,12 @@ pub struct Parser<'input> {
 
 #[derive(Clone, Copy)]
 struct CurrElement<'input> {
-    prefix: &'input str,
+    prefix: Option<&'input str>,
     local: &'input str,
 }
 
 struct CurrAttribute<'input> {
-    prefix: &'input str,
+    prefix: Option<&'input str>,
     local: &'input str,
     value: StringData<'input>,
 }
@@ -108,7 +108,7 @@ impl<'input> Parser<'input> {
         })
     }
 
-    pub fn open_element(&mut self, prefix: &'input str, local: &'input str) -> Result {
+    pub fn open_element(&mut self, prefix: Option<&'input str>, local: &'input str) -> Result {
         self.element = Some(CurrElement { prefix, local });
 
         Ok(())
@@ -117,20 +117,20 @@ impl<'input> Parser<'input> {
     pub fn push_attribute(
         &mut self,
         tokenizer: &mut Tokenizer<'input>,
-        prefix: &'input str,
+        prefix: Option<&'input str>,
         local: &'input str,
         value: &'input str,
     ) -> Result {
         let value = self.normalize_attribute_value(tokenizer, value)?;
 
-        if prefix == "xmlns" {
+        if prefix == Some("xmlns") {
             if value.as_ref() != "http://www.w3.org/XML/1998/namespace" {
                 self.doc.namespaces.push(NamespaceData {
                     name: Some(local),
                     uri: value,
                 })?;
             }
-        } else if prefix.is_empty() && local == "xmlns" {
+        } else if prefix.is_none() && local == "xmlns" {
             self.doc.namespaces.push(NamespaceData {
                 name: None,
                 uri: value,
@@ -531,10 +531,10 @@ impl<'input> Parser<'input> {
         }
 
         for attribute in self.attributes.drain(..) {
-            let namespace = if attribute.prefix == "xml" {
-                Some(Default::default())
-            } else if attribute.prefix.is_empty() {
+            let namespace = if attribute.prefix.is_none() {
                 None
+            } else if attribute.prefix == Some("xml") {
+                Some(Default::default())
             } else {
                 self.doc.namespaces.find(namespaces, attribute.prefix)?
             };

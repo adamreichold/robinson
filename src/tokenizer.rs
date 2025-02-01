@@ -19,7 +19,7 @@ pub struct Tokenizer<'input> {
 pub enum ElementEnd<'input> {
     Empty,
     Close {
-        prefix: &'input str,
+        prefix: Option<&'input str>,
         local: &'input str,
     },
     Open,
@@ -169,7 +169,7 @@ impl<'input> Tokenizer<'input> {
         self.expect_space()?;
 
         let (prefix, local, _value) = self.parse_attribute()?;
-        if !prefix.is_empty() || local != "version" {
+        if prefix.is_some() || local != "version" {
             return ErrorKind::ExpectedLiteral("version").into();
         }
 
@@ -179,7 +179,7 @@ impl<'input> Tokenizer<'input> {
         }
 
         let (prefix, local, _value) = self.parse_attribute()?;
-        if !prefix.is_empty() || local != "encoding" {
+        if prefix.is_some() || local != "encoding" {
             return ErrorKind::ExpectedLiteral("encoding").into();
         }
 
@@ -189,7 +189,7 @@ impl<'input> Tokenizer<'input> {
         }
 
         let (prefix, local, _value) = self.parse_attribute()?;
-        if !prefix.is_empty() || local != "standalone" {
+        if prefix.is_some() || local != "standalone" {
             return ErrorKind::ExpectedLiteral("standalone").into();
         }
 
@@ -373,7 +373,7 @@ impl<'input> Tokenizer<'input> {
         Ok(name)
     }
 
-    fn parse_qualname(&mut self) -> Result<(&'input str, &'input str)> {
+    fn parse_qualname(&mut self) -> Result<(Option<&'input str>, &'input str)> {
         let mut prefix = None;
 
         let mut pos = 0;
@@ -412,8 +412,8 @@ impl<'input> Tokenizer<'input> {
         self.text = rest;
 
         let (prefix, local) = match prefix {
-            Some(pos) => (&qualname[..pos], &qualname[pos + 1..]),
-            None => ("", qualname),
+            Some(pos) => (Some(&qualname[..pos]), &qualname[pos + 1..]),
+            None => (None, qualname),
         };
 
         if local.is_empty() {
@@ -467,7 +467,7 @@ impl<'input> Tokenizer<'input> {
         parser.close_element(ElementEnd::Close { prefix, local })
     }
 
-    fn parse_attribute(&mut self) -> Result<(&'input str, &'input str, &'input str)> {
+    fn parse_attribute(&mut self) -> Result<(Option<&'input str>, &'input str, &'input str)> {
         let (prefix, local) = self.parse_qualname()?;
 
         self.try_space();

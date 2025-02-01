@@ -29,13 +29,7 @@ impl<'input> NamespacesBuilder<'input> {
         }
     }
 
-    pub fn find(&self, range: &Range<u32>, prefix: &str) -> Result<Option<Namespace>> {
-        let prefix = if !prefix.is_empty() {
-            Some(prefix)
-        } else {
-            None
-        };
-
+    pub fn find(&self, range: &Range<u32>, prefix: Option<&str>) -> Result<Option<Namespace>> {
         let namespace = self.parsed[range.start as usize..range.end as usize]
             .iter()
             .find(|namespace| self.data[namespace.0 as usize].name == prefix);
