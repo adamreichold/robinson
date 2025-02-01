@@ -122,8 +122,8 @@ impl<'input> Tokenizer<'input> {
     }
 
     fn expect_quote(&mut self) -> Result<u8> {
-        match self.text.as_bytes() {
-            [quote @ b'"' | quote @ b'\'', ..] => {
+        match self.text.as_bytes().first() {
+            Some(quote @ b'"' | quote @ b'\'') => {
                 self.text = &self.text[1..];
                 Ok(*quote)
             }
@@ -499,13 +499,13 @@ impl<'input> Tokenizer<'input> {
                 return ErrorKind::InvalidReference(value.to_owned()).into();
             };
 
-            char::from_u32(code).unwrap_or('\u{FFFD}')
+            char::from_u32(code).unwrap_or(char::REPLACEMENT_CHARACTER)
         } else if let Some(value) = value.strip_prefix("#") {
             let Ok(code) = value.parse() else {
                 return ErrorKind::InvalidReference(value.to_owned()).into();
             };
 
-            char::from_u32(code).unwrap_or('\u{FFFD}')
+            char::from_u32(code).unwrap_or(char::REPLACEMENT_CHARACTER)
         } else {
             match value {
                 "quot" => '"',
@@ -532,9 +532,9 @@ for idx in range(128):
     if chr(idx) in xml_name:
         mask |= 1 << idx
 
-print(f"static CHECK_XML_NAME: u128 = 0b{mask:0128b};")
+print(f"const CHECK_XML_NAME: u128 = 0b{mask:0128b};")
 */
-static CHECK_XML_NAME: u128 = 0b00000111111111111111111111111110100001111111111111111111111111100000011111111111011000000000000000000000000000000000000000000000;
+const CHECK_XML_NAME: u128 = 0b00000111111111111111111111111110100001111111111111111111111111100000011111111111011000000000000000000000000000000000000000000000;
 
 #[cold]
 #[inline(never)]
