@@ -66,20 +66,6 @@ impl Drop for StringData<'_> {
     }
 }
 
-impl Clone for StringData<'_> {
-    fn clone(&self) -> Self {
-        if self.is_owned() {
-            Self::owned(self.as_ref().into())
-        } else {
-            Self {
-                len: self.len,
-                ptr: self.ptr,
-                marker: self.marker,
-            }
-        }
-    }
-}
-
 impl AsRef<str> for StringData<'_> {
     fn as_ref(&self) -> &str {
         // SAFETY: We originally deconstructed a (boxed) string slice,

@@ -58,7 +58,7 @@ impl<'doc, 'input> Attribute<'doc, 'input> {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct AttributeData<'input> {
     pub name: NameData<'input>,
     pub value: StringData<'input>,

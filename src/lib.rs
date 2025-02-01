@@ -26,7 +26,6 @@ pub use attributes::{Attribute, Attributes};
 pub use error::{Error, ErrorKind};
 pub use nodes::{Children, Descendants, Node, NodeId};
 
-#[derive(Clone)]
 pub struct Document<'input> {
     nodes: Box<[NodeData]>,
     elements: Box<[ElementData<'input>]>,

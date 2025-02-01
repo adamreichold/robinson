@@ -5,7 +5,6 @@ use crate::{
     strings::StringData,
 };
 
-#[derive(Clone)]
 pub struct Namespaces<'input> {
     uris: Box<[StringData<'input>]>,
 }
@@ -111,7 +110,7 @@ impl<'input> NamespacesBuilder<'input> {
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Namespace(u16);
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub struct NamespaceData<'input> {
     pub name: Option<&'input str>,
     pub uri: StringData<'input>,

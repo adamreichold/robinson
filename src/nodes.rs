@@ -297,7 +297,7 @@ fn collect_text<'doc>(mut iter: impl Iterator<Item = &'doc str> + Clone) -> Opti
     Some(Cow::Owned(buf))
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct NodeData {
     pub element: Option<NodeId>,
     pub text: Option<NodeId>,
@@ -309,7 +309,7 @@ pub struct NodeData {
 
 const _SIZE_OF_NODE_DATA: () = assert!(size_of::<NodeData>() == 3 * size_of::<usize>());
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct ElementData<'input> {
     pub name: NameData<'input>,
     pub attributes: Range<u32>,

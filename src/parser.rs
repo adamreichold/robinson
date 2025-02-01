@@ -53,7 +53,6 @@ struct CurrElement<'input> {
     local: &'input str,
 }
 
-#[derive(Clone)]
 struct CurrAttribute<'input> {
     prefix: &'input str,
     local: &'input str,
