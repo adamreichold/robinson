@@ -34,6 +34,14 @@ pub struct Document<'input> {
     namespaces: Namespaces<'input>,
 }
 
+const fn _is_send_and_sync<T>()
+where
+    T: Send + Sync,
+{
+}
+
+const _DOCUMENT_IS_SEND_AND_SYNC: () = _is_send_and_sync::<Document>();
+
 impl Document<'_> {
     pub fn len(&self) -> NonZeroUsize {
         NonZeroUsize::new(self.nodes.len()).unwrap()

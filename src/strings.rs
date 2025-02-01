@@ -13,6 +13,10 @@ pub struct StringData<'input> {
     marker: PhantomData<Cow<'input, str>>,
 }
 
+unsafe impl Send for StringData<'_> {}
+
+unsafe impl Sync for StringData<'_> {}
+
 const _SIZE_OF_STRING_DATA: () =
     assert!(size_of::<StringData<'static>>() == 2 * size_of::<usize>());
 
