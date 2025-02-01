@@ -5,6 +5,7 @@ use memchr::{memchr, memmem::Finder};
 use crate::{
     error::{Error, ErrorKind, Result},
     parser::Parser,
+    strings::{split_first, split_once},
 };
 
 pub struct Tokenizer<'input> {
@@ -98,19 +99,14 @@ impl<'input> Tokenizer<'input> {
     }
 
     fn try_space(&mut self) -> bool {
-        let bytes = self.text.as_bytes();
-        let mut pos = 0;
+        let mut space = false;
 
-        while let Some(b' ' | b'\t' | b'\r' | b'\n') = bytes.get(pos) {
-            pos += 1;
+        while let Some((_space, rest)) = split_first(self.text, [b' ', b'\t', b'\r', b'\n']) {
+            space = true;
+            self.text = rest;
         }
 
-        if pos != 0 {
-            self.text = &self.text[pos..];
-            true
-        } else {
-            false
-        }
+        space
     }
 
     fn expect_space(&mut self) -> Result {
@@ -122,10 +118,10 @@ impl<'input> Tokenizer<'input> {
     }
 
     fn expect_quote(&mut self) -> Result<u8> {
-        match self.text.as_bytes().first() {
-            Some(quote @ b'"' | quote @ b'\'') => {
-                self.text = &self.text[1..];
-                Ok(*quote)
+        match split_first(self.text, [b'"', b'\'']) {
+            Some((quote, rest)) => {
+                self.text = rest;
+                Ok(quote)
             }
             _ => ErrorKind::ExpectedQuote.into(),
         }
@@ -245,12 +241,10 @@ impl<'input> Tokenizer<'input> {
 
         let quote = self.expect_quote()?;
 
-        let Some(pos) = memchr(quote, self.text.as_bytes()) else {
+        let Some((value, rest)) = split_once(self.text, quote) else {
             return ErrorKind::ExpectedQuote.into();
         };
-
-        let (value, rest) = self.text.split_at(pos);
-        self.text = &rest[1..];
+        self.text = rest;
 
         self.try_space();
         self.expect_literal(">")?;
@@ -476,23 +470,19 @@ impl<'input> Tokenizer<'input> {
 
         let quote = self.expect_quote()?;
 
-        let Some(pos) = memchr(quote, self.text.as_bytes()) else {
+        let Some((value, rest)) = split_once(self.text, quote) else {
             return ErrorKind::ExpectedQuote.into();
         };
-
-        let (value, rest) = self.text.split_at(pos);
-        self.text = &rest[1..];
+        self.text = rest;
 
         Ok((prefix, local, value))
     }
 
     pub fn parse_reference(&mut self) -> Result<Reference<'input>> {
-        let Some(pos) = memchr(b';', self.text.as_bytes()) else {
+        let Some((value, rest)) = split_once(self.text, b';') else {
             return ErrorKind::ExpectedLiteral(";").into();
         };
-
-        let (value, rest) = self.text.split_at(pos);
-        self.text = &rest[1..];
+        self.text = rest;
 
         let char_ = if let Some(value) = value.strip_prefix("#x") {
             let Ok(code) = u32::from_str_radix(value, 16) else {

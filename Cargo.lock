@@ -86,7 +86,7 @@ dependencies = [
 
 [[package]]
 name = "robinson"
-version = "0.3.1"
+version = "0.3.2"
 dependencies = [
  "memchr",
  "pretty_assertions",

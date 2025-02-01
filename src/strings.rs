@@ -6,6 +6,8 @@ use std::marker::PhantomData;
 use std::mem::size_of;
 use std::ptr::{NonNull, slice_from_raw_parts_mut};
 
+use memchr::memchr;
+
 #[derive(Debug)]
 pub struct StringData<'input> {
     len: usize,
@@ -97,4 +99,36 @@ impl Ord for StringData<'_> {
     fn cmp(&self, other: &Self) -> Ordering {
         self.as_ref().cmp(other.as_ref())
     }
+}
+
+#[inline]
+pub fn split_first<const N: usize>(str_: &str, bytes: [u8; N]) -> Option<(u8, &str)> {
+    assert!(bytes.is_ascii());
+
+    if let Some(&first) = str_.as_bytes().first() {
+        for byte in bytes {
+            if first == byte {
+                // SAFETY: `first` is a ASCII character hence followed by a character boundary.
+                let rest = unsafe { str_.get_unchecked(1..) };
+
+                return Some((first, rest));
+            }
+        }
+    }
+
+    None
+}
+
+#[inline]
+pub fn split_once(str_: &str, delim: u8) -> Option<(&str, &str)> {
+    assert!(delim.is_ascii());
+
+    let pos = memchr(delim, str_.as_bytes())?;
+
+    // SAFETY: `delim` is a ASCII character hence preceeded by a character boundary.
+    let before = unsafe { str_.get_unchecked(..pos) };
+    // SAFETY: `delim` is a ASCII character hence followed by a character boundary.
+    let after = unsafe { str_.get_unchecked(pos + 1..) };
+
+    Some((before, after))
 }
