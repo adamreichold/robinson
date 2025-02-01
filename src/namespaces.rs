@@ -29,7 +29,7 @@ impl<'input> NamespacesBuilder<'input> {
         }
     }
 
-    pub fn find(&self, range: Range<u32>, prefix: &str) -> Result<Option<Namespace>> {
+    pub fn find(&self, range: &Range<u32>, prefix: &str) -> Result<Option<Namespace>> {
         let prefix = if !prefix.is_empty() {
             Some(prefix)
         } else {
@@ -85,12 +85,12 @@ impl<'input> NamespacesBuilder<'input> {
         Ok(namespace)
     }
 
-    pub fn push_ref(&mut self, offset: u32, idx: u32) -> Result {
+    pub fn push_ref(&mut self, range: &Range<u32>, idx: u32) -> Result {
         let namespace = self.parsed[idx as usize];
 
         let name = &self.data[namespace.0 as usize].name;
 
-        if self.parsed[offset as usize..]
+        if self.parsed[range.start as usize..range.end as usize]
             .iter()
             .any(|namespace| &self.data[namespace.0 as usize].name == name)
         {

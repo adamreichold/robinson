@@ -148,7 +148,7 @@ impl<'input> Parser<'input> {
 
     pub fn close_element(&mut self, element_end: ElementEnd<'input>) -> Result {
         let namespaces = self.resolve_namespaces()?;
-        let attributes = self.resolve_attributes(namespaces.clone())?;
+        let attributes = self.resolve_attributes(&namespaces)?;
 
         match element_end {
             ElementEnd::Empty => {
@@ -156,10 +156,7 @@ impl<'input> Parser<'input> {
                     return ErrorKind::UnexpectedCloseElement.into();
                 };
 
-                let namespace = self
-                    .doc
-                    .namespaces
-                    .find(namespaces.clone(), element.prefix)?;
+                let namespace = self.doc.namespaces.find(&namespaces, element.prefix)?;
 
                 let id = self.append_element_node(ElementData {
                     name: NameData {
@@ -177,7 +174,7 @@ impl<'input> Parser<'input> {
                 let parent = &self.doc.nodes[self.parent.get()];
 
                 if let Some(element) = parent.element {
-                    let namespace = self.doc.namespaces.find(namespaces, prefix)?;
+                    let namespace = self.doc.namespaces.find(&namespaces, prefix)?;
 
                     let name = self.doc.elements[element.get()].name;
 
@@ -200,10 +197,7 @@ impl<'input> Parser<'input> {
                     return ErrorKind::UnexpectedCloseElement.into();
                 };
 
-                let namespace = self
-                    .doc
-                    .namespaces
-                    .find(namespaces.clone(), element.prefix)?;
+                let namespace = self.doc.namespaces.find(&namespaces, element.prefix)?;
 
                 let id = self.append_element_node(ElementData {
                     name: NameData {
@@ -242,10 +236,6 @@ impl<'input> Parser<'input> {
             self.doc.nodes[id.get()].next_subtree = Some(new_id);
         }
 
-        if element.is_none() {
-            self.subtree.push(new_id);
-        }
-
         Ok(new_id)
     }
 
@@ -257,12 +247,16 @@ impl<'input> Parser<'input> {
         self.append_node(Some(id), None)
     }
 
-    fn append_text_node(&mut self, text: StringData<'input>) -> Result<NodeId> {
+    fn append_text_node(&mut self, text: StringData<'input>) -> Result<()> {
         let id = NodeId::new(self.doc.texts.len())?;
 
         self.doc.texts.push(text);
 
-        self.append_node(None, Some(id))
+        let id = self.append_node(None, Some(id))?;
+
+        self.subtree.push(id);
+
+        Ok(())
     }
 
     pub fn append_text(&mut self, tokenizer: &mut Tokenizer<'input>, text: &'input str) -> Result {
@@ -511,12 +505,14 @@ impl<'input> Parser<'input> {
         if let Some(parent_namespaces) = self.parent_namespaces.last() {
             let parent_namespaces = parent_namespaces.clone();
 
-            if self.namespaces_offset == self.doc.namespaces.len() {
+            let self_namespaces = self.namespaces_offset..self.doc.namespaces.len();
+
+            if self_namespaces.is_empty() {
                 return Ok(parent_namespaces);
             }
 
             for idx in parent_namespaces {
-                self.doc.namespaces.push_ref(self.namespaces_offset, idx)?;
+                self.doc.namespaces.push_ref(&self_namespaces, idx)?;
             }
         }
 
@@ -526,7 +522,7 @@ impl<'input> Parser<'input> {
         Ok(old_len..new_len)
     }
 
-    fn resolve_attributes(&mut self, namespaces: Range<u32>) -> Result<Range<u32>> {
+    fn resolve_attributes(&mut self, namespaces: &Range<u32>) -> Result<Range<u32>> {
         let old_len = self.doc.attributes.len();
         let new_len = old_len + self.attributes.len();
 
@@ -540,9 +536,7 @@ impl<'input> Parser<'input> {
             } else if attribute.prefix.is_empty() {
                 None
             } else {
-                self.doc
-                    .namespaces
-                    .find(namespaces.clone(), attribute.prefix)?
+                self.doc.namespaces.find(namespaces, attribute.prefix)?
             };
 
             self.doc.attributes.push(AttributeData {
