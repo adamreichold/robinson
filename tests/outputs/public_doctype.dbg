@@ -1,0 +1,11 @@
+Ok(
+    Document {
+        root: Node {
+            children: [
+                Node {
+                    name: "svg",
+                },
+            ],
+        },
+    },
+)

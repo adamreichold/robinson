@@ -230,6 +230,19 @@ impl<'input> Tokenizer<'input> {
 
         let _name = self.parse_name()?;
 
+        if self.try_space() {
+            if self.try_literal("PUBLIC") {
+                self.expect_space()?;
+                let _pub_id = self.parse_quoted()?;
+
+                self.expect_space()?;
+                let _sys_id = self.parse_quoted()?;
+            } else if self.try_literal("SYSTEM") {
+                self.expect_space()?;
+                let _sys_id = self.parse_quoted()?;
+            }
+        }
+
         Ok(())
     }
 
@@ -239,12 +252,7 @@ impl<'input> Tokenizer<'input> {
         let name = self.parse_name()?;
         self.expect_space()?;
 
-        let quote = self.expect_quote()?;
-
-        let Some((value, rest)) = split_once(self.text, quote) else {
-            return ErrorKind::ExpectedQuote.into();
-        };
-        self.text = rest;
+        let value = self.parse_quoted()?;
 
         self.try_space();
         self.expect_literal(">")?;
@@ -417,6 +425,17 @@ impl<'input> Tokenizer<'input> {
         Ok((prefix, local))
     }
 
+    fn parse_quoted(&mut self) -> Result<&'input str> {
+        let quote = self.expect_quote()?;
+
+        let Some((quoted, rest)) = split_once(self.text, quote) else {
+            return ErrorKind::ExpectedQuote.into();
+        };
+        self.text = rest;
+
+        Ok(quoted)
+    }
+
     fn parse_element(&mut self, parser: &mut Parser<'input>) -> Result {
         let (prefix, local) = self.parse_qualname()?;
 
@@ -468,12 +487,7 @@ impl<'input> Tokenizer<'input> {
         self.expect_literal("=")?;
         self.try_space();
 
-        let quote = self.expect_quote()?;
-
-        let Some((value, rest)) = split_once(self.text, quote) else {
-            return ErrorKind::ExpectedQuote.into();
-        };
-        self.text = rest;
+        let value = self.parse_quoted()?;
 
         Ok((prefix, local, value))
     }

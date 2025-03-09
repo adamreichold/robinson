@@ -47,6 +47,7 @@ test!(entity_reference_element);
 test!(invalid_reference_hexcode);
 test!(missing_root_element);
 test!(namespace_close_element);
+test!(public_doctype);
 test!(text);
 test!(text_entity_interleaved);
 test!(unclosed_root_element);

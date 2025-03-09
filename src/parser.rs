@@ -222,10 +222,7 @@ impl<'input> Parser<'input> {
     fn append_node(&mut self, element: Option<NodeId>, text: Option<NodeId>) -> Result<NodeId> {
         let new_id = NodeId::new(self.doc.nodes.len())?;
 
-        let prev_sibling = replace(
-            &mut self.doc.nodes[self.parent.get()].last_child,
-            Some(new_id),
-        );
+        let prev_sibling = self.doc.nodes[self.parent.get()].last_child.replace(new_id);
 
         self.doc.nodes.push(NodeData {
             element,
