@@ -327,14 +327,16 @@ where
             if O::NAMESPACES {
                 name == name1
             } else {
-                name.map(|name| name.local) == name1.map(|name| name.local)
+                name.map(|name| name.local) == name1.map(|name1| name1.local)
             }
         }))
     }
 
     fn text(&self) -> Cow<'de, str> {
         match self.source {
-            Source::Node(node) | Source::Content(node) => node.child_text().unwrap_or_default(),
+            Source::Node(node) | Source::Content(node) => {
+                node.child_text().unwrap_or(Cow::Borrowed(""))
+            }
             Source::Attribute(attr) => Cow::Borrowed(attr.value()),
         }
     }
