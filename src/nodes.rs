@@ -234,6 +234,13 @@ impl<'doc, 'input> Node<'doc, 'input> {
             .map(|element| element.name.get(self.doc))
     }
 
+    pub fn has_name<N>(self, name: N) -> bool
+    where
+        Name<'doc, 'input>: PartialEq<N>,
+    {
+        self.name().is_some_and(|name1| name1 == name)
+    }
+
     pub fn text(self) -> Option<&'doc str> {
         self.text_data().map(AsRef::as_ref)
     }
