@@ -1,3 +1,4 @@
+use std::num::NonZeroU16;
 use std::ops::Range;
 
 use crate::{
@@ -11,7 +12,7 @@ pub(crate) struct Namespaces<'input> {
 
 impl Namespaces<'_> {
     pub(crate) fn get(&self, namespace: Namespace) -> &str {
-        self.uris[namespace.0 as usize].as_ref()
+        self.uris[namespace.get()].as_ref()
     }
 }
 
@@ -36,7 +37,7 @@ impl<'input> NamespacesBuilder<'input> {
     ) -> Result<Option<Namespace>> {
         let namespace = self.parsed[range.start as usize..range.end as usize]
             .iter()
-            .find(|namespace| self.data[namespace.0 as usize].name == prefix);
+            .find(|namespace| self.data[namespace.get()].name == prefix);
 
         match namespace {
             Some(namespace) => Ok(Some(*namespace)),
@@ -60,16 +61,12 @@ impl<'input> NamespacesBuilder<'input> {
 
         let idx = self
             .sorted
-            .binary_search_by(|namespace| self.data[namespace.0 as usize].cmp(&data));
+            .binary_search_by(|namespace| self.data[namespace.get()].cmp(&data));
 
         let namespace = match idx {
             Ok(idx) => self.sorted[idx],
             Err(idx) => {
-                if self.data.len() > u16::MAX as usize {
-                    return ErrorKind::TooManyNamespaces.into();
-                }
-
-                let namespace = Namespace(self.data.len() as u16);
+                let namespace = Namespace::new(self.data.len())?;
 
                 self.data.push(data);
                 self.sorted.insert(idx, namespace);
@@ -86,11 +83,11 @@ impl<'input> NamespacesBuilder<'input> {
     pub(crate) fn push_ref(&mut self, range: &Range<u32>, idx: u32) -> Result {
         let namespace = self.parsed[idx as usize];
 
-        let name = &self.data[namespace.0 as usize].name;
+        let name = &self.data[namespace.get()].name;
 
         if self.parsed[range.start as usize..range.end as usize]
             .iter()
-            .any(|namespace| &self.data[namespace.0 as usize].name == name)
+            .any(|namespace| &self.data[namespace.get()].name == name)
         {
             return Ok(());
         }
@@ -105,8 +102,28 @@ impl<'input> NamespacesBuilder<'input> {
     }
 }
 
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub(crate) struct Namespace(u16);
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub(crate) struct Namespace(NonZeroU16);
+
+impl Namespace {
+    pub(crate) fn new(id: usize) -> Result<Self> {
+        if id >= u16::MAX as usize {
+            return ErrorKind::TooManyNamespaces.into();
+        }
+
+        Ok(Self(NonZeroU16::new(id as u16 + 1).unwrap()))
+    }
+
+    pub(crate) fn get(self) -> usize {
+        self.0.get() as usize - 1
+    }
+}
+
+impl Default for Namespace {
+    fn default() -> Self {
+        Self::new(0).unwrap()
+    }
+}
 
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) struct NamespaceData<'input> {
