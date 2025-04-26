@@ -4,7 +4,6 @@ use std::fmt;
 use std::hash::{Hash, Hasher};
 use std::iter::{Enumerate, from_fn};
 use std::num::NonZeroU32;
-use std::ops::Range;
 use std::slice::Iter;
 
 use crate::{
@@ -304,7 +303,6 @@ fn collect_text<'doc>(mut iter: impl Iterator<Item = &'doc str> + Clone) -> Opti
     Some(Cow::Owned(buf))
 }
 
-#[derive(Debug)]
 pub(crate) struct NodeData {
     pub(crate) element: Option<NodeId>,
     pub(crate) text: Option<NodeId>,
@@ -316,14 +314,17 @@ pub(crate) struct NodeData {
 
 const _SIZE_OF_NODE_DATA: () = assert!(size_of::<NodeData>() == 3 * size_of::<usize>());
 
-#[derive(Debug)]
+#[repr(Rust, packed)]
 pub(crate) struct ElementData<'input> {
     pub(crate) name: NameData<'input>,
-    pub(crate) attributes: Range<u32>,
+    pub(crate) attributes_start: u32,
+    pub(crate) attributes_end: u32,
 }
 
-const _SIZE_OF_ELEMENT_DATA: () =
-    assert!(size_of::<ElementData<'static>>() == (3 + 1) * size_of::<usize>());
+const _SIZE_OF_ELEMENT_DATA: () = assert!(
+    size_of::<ElementData<'static>>()
+        == size_of::<u16>() + 2 * size_of::<usize>() + 2 * size_of::<u32>()
+);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct NodeId(NonZeroU32);

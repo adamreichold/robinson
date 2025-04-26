@@ -3,12 +3,11 @@
 use std::borrow::Cow;
 use std::cmp::Ordering;
 use std::marker::PhantomData;
-use std::mem::size_of;
-use std::ptr::{NonNull, slice_from_raw_parts_mut};
+use std::mem::{ManuallyDrop, size_of};
+use std::ptr::{NonNull, read_unaligned, slice_from_raw_parts_mut};
 
 use memchr::memchr;
 
-#[derive(Debug)]
 pub(crate) struct StringData<'input> {
     len: usize,
     ptr: NonNull<u8>,
@@ -61,7 +60,30 @@ impl<'input> StringData<'input> {
 
         slice_from_raw_parts_mut(ptr, len) as *mut str
     }
+
+    pub(crate) unsafe fn packed_ref<P>(_packed: &P, this: *const Self) -> &str {
+        // SAFETY: `this` is a potentially unaligned pointer derived from `_packed`
+        // and hence valid for the same lifetime as `_packed`.
+        let this = ManuallyDrop::new(unsafe { read_unaligned(this) });
+
+        // SAFETY: `this` will not be dropped and hence the string slice
+        // lifetime can be extended for the full lifetime of `_packed`.
+        unsafe { &*this.slice() }
+    }
 }
+
+macro_rules! packed_string_data_ref {
+    ($packed:expr, $field:ident) => {{
+        #[allow(unsafe_code)]
+        // SAFETY: We fulfill the contract of `StringData::packed_ref`
+        // by passing a pointer derived from `$packed` using `$field`.
+        unsafe {
+            $crate::StringData::packed_ref($packed, ::std::ptr::addr_of!($packed.$field))
+        }
+    }};
+}
+
+pub(crate) use packed_string_data_ref;
 
 impl Drop for StringData<'_> {
     fn drop(&mut self) {
@@ -106,13 +128,11 @@ pub(crate) fn split_first<const N: usize>(str_: &str, bytes: [u8; N]) -> Option<
     assert!(bytes.is_ascii());
 
     if let Some(&first) = str_.as_bytes().first() {
-        for byte in bytes {
-            if first == byte {
-                // SAFETY: `first` is a ASCII character hence followed by a character boundary.
-                let rest = unsafe { str_.get_unchecked(1..) };
+        if bytes.contains(&first) {
+            // SAFETY: `first` is a ASCII character hence followed by a character boundary.
+            let rest = unsafe { str_.get_unchecked(1..) };
 
-                return Some((first, rest));
-            }
+            return Some((first, rest));
         }
     }
 

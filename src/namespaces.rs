@@ -102,7 +102,7 @@ impl<'input> NamespacesBuilder<'input> {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub(crate) struct Namespace(NonZeroU16);
 
 impl Namespace {
@@ -125,7 +125,7 @@ impl Default for Namespace {
     }
 }
 
-#[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) struct NamespaceData<'input> {
     pub(crate) name: Option<&'input str>,
     pub(crate) uri: StringData<'input>,

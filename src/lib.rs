@@ -92,14 +92,15 @@ impl PartialEq<&str> for Name<'_, '_> {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Clone, Copy)]
+#[repr(Rust, packed)]
 struct NameData<'input> {
     namespace: Option<Namespace>,
     local: &'input str,
 }
 
 const _SIZE_OF_NAME_DATA: () =
-    assert!(size_of::<NameData<'static>>() == (1 + 2) * size_of::<usize>());
+    assert!(size_of::<NameData<'static>>() == size_of::<u16>() + 2 * size_of::<usize>());
 
 impl<'input> NameData<'input> {
     fn get<'doc>(self, doc: &'doc Document) -> Name<'doc, 'input> {

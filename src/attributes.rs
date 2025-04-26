@@ -1,12 +1,16 @@
 use std::fmt;
 use std::slice::Iter;
 
-use crate::{Document, Name, NameData, nodes::Node, strings::StringData};
+use crate::{
+    Document, Name, NameData,
+    nodes::Node,
+    strings::{StringData, packed_string_data_ref},
+};
 
 impl<'doc, 'input> Node<'doc, 'input> {
     pub fn has_attributes(self) -> bool {
         self.element_data()
-            .is_some_and(|element| !element.attributes.is_empty())
+            .is_some_and(|element| element.attributes_start < element.attributes_end)
     }
 
     pub fn attributes(self) -> Attributes<'doc, 'input> {
@@ -14,7 +18,7 @@ impl<'doc, 'input> Node<'doc, 'input> {
             .element_data()
             .map(|element| {
                 &self.doc.attributes
-                    [element.attributes.start as usize..element.attributes.end as usize]
+                    [element.attributes_start as usize..element.attributes_end as usize]
             })
             .unwrap_or_default();
 
@@ -54,18 +58,18 @@ impl<'doc, 'input> Attribute<'doc, 'input> {
     }
 
     pub fn value(self) -> &'doc str {
-        self.data.value.as_ref()
+        packed_string_data_ref!(self.data, value)
     }
 }
 
-#[derive(Debug)]
+#[repr(Rust, packed)]
 pub(crate) struct AttributeData<'input> {
     pub(crate) name: NameData<'input>,
     pub(crate) value: StringData<'input>,
 }
 
 const _SIZE_OF_ATTRIBUTE_DATA: () =
-    assert!(size_of::<AttributeData<'static>>() == (3 + 2) * size_of::<usize>());
+    assert!(size_of::<AttributeData<'static>>() == size_of::<u16>() + (2 + 2) * size_of::<usize>());
 
 #[derive(Clone)]
 pub struct Attributes<'doc, 'input> {

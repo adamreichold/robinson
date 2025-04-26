@@ -167,7 +167,8 @@ impl<'input> Parser<'input> {
                         namespace,
                         local: element.local,
                     },
-                    attributes,
+                    attributes_start: attributes.start,
+                    attributes_end: attributes.end,
                 })?;
 
                 self.subtree.push(id);
@@ -180,9 +181,11 @@ impl<'input> Parser<'input> {
                 if let Some(element) = parent.element {
                     let namespace = self.doc.namespaces.find(&namespaces, prefix)?;
 
-                    let name = self.doc.elements[element.get()].name;
+                    let name = &self.doc.elements[element.get()].name;
+                    let name_namespace = name.namespace;
+                    let name_local = name.local;
 
-                    if namespace != name.namespace || local != name.local {
+                    if namespace != name_namespace || local != name_local {
                         return ErrorKind::UnexpectedCloseElement.into();
                     }
                 }
@@ -208,7 +211,8 @@ impl<'input> Parser<'input> {
                         namespace,
                         local: element.local,
                     },
-                    attributes,
+                    attributes_start: attributes.start,
+                    attributes_end: attributes.end,
                 })?;
 
                 self.parent = id;

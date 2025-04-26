@@ -163,7 +163,7 @@ struct Deserializer<'de, 'input, 'temp, O> {
     options: PhantomData<O>,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Clone, Copy)]
 enum Source<'de, 'input> {
     Node(Node<'de, 'input>),
     Attribute(Attribute<'de, 'input>),
