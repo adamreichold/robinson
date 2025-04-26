@@ -15,7 +15,7 @@ use crate::{
 
 impl<'input> Document<'input> {
     pub fn root<'doc>(&'doc self) -> Node<'doc, 'input> {
-        self.node(NodeId::new(0).unwrap()).unwrap()
+        self.node(NodeId::ROOT).unwrap()
     }
 
     pub fn root_element<'doc>(&'doc self) -> Node<'doc, 'input> {
@@ -85,7 +85,7 @@ impl<'doc, 'input> Node<'doc, 'input> {
     }
 
     pub fn is_root(&self) -> bool {
-        self.data.element.is_none() && self.data.text.is_none()
+        self.id == NodeId::ROOT
     }
 
     pub fn is_element(&self) -> bool {
@@ -329,6 +329,8 @@ const _SIZE_OF_ELEMENT_DATA: () =
 pub struct NodeId(NonZeroU32);
 
 impl NodeId {
+    const ROOT: Self = Self(NonZeroU32::new(1).unwrap());
+
     pub fn new(id: usize) -> Result<Self> {
         if id >= u32::MAX as usize {
             return ErrorKind::TooManyNodes.into();
