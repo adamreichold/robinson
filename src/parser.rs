@@ -10,7 +10,7 @@ use crate::{
     namespaces::NamespaceData,
     nodes::{ElementData, NodeData, NodeId},
     strings::StringData,
-    tokenizer::{ElementEnd, Reference, Tokenizer},
+    tokenizer::{Reference, Tokenizer},
 };
 
 impl<'input> Document<'input> {
@@ -150,75 +150,86 @@ impl<'input> Parser<'input> {
         Ok(())
     }
 
-    pub(crate) fn close_element(&mut self, element_end: ElementEnd<'input>) -> Result {
+    pub(crate) fn close_empty_element(&mut self) -> Result {
         let namespaces = self.resolve_namespaces()?;
         let attributes = self.resolve_attributes(&namespaces)?;
 
-        match element_end {
-            ElementEnd::Empty => {
-                let Some(element) = self.element.take() else {
-                    return ErrorKind::UnexpectedCloseElement.into();
-                };
+        let Some(element) = self.element.take() else {
+            return ErrorKind::UnexpectedCloseElement.into();
+        };
 
-                let namespace = self.doc.namespaces.find(&namespaces, element.prefix)?;
+        let namespace = self.doc.namespaces.find(&namespaces, element.prefix)?;
 
-                let id = self.append_element_node(ElementData {
-                    name: NameData {
-                        namespace,
-                        local: element.local,
-                    },
-                    attributes_start: attributes.start,
-                    attributes_end: attributes.end,
-                })?;
+        let id = self.append_element_node(ElementData {
+            name: NameData {
+                namespace,
+                local: element.local,
+            },
+            attributes_start: attributes.start,
+            attributes_end: attributes.end,
+        })?;
 
-                self.subtree.push(id);
-            }
-            ElementEnd::Close { prefix, local } => {
-                self.element = None;
+        self.subtree.push(id);
 
-                let parent = &self.doc.nodes[self.parent.get()];
+        Ok(())
+    }
 
-                if let Some(element) = parent.element {
-                    let namespace = self.doc.namespaces.find(&namespaces, prefix)?;
+    pub(crate) fn close_element(
+        &mut self,
+        prefix: Option<&'input str>,
+        local: &'input str,
+    ) -> Result {
+        let namespaces = self.resolve_namespaces()?;
 
-                    let name = &self.doc.elements[element.get()].name;
-                    let name_namespace = name.namespace;
-                    let name_local = name.local;
+        self.element = None;
 
-                    if namespace != name_namespace || local != name_local {
-                        return ErrorKind::UnexpectedCloseElement.into();
-                    }
-                }
+        let parent = &self.doc.nodes[self.parent.get()];
 
-                self.subtree.push(self.parent);
+        if let Some(element) = parent.element {
+            let namespace = self.doc.namespaces.find(&namespaces, prefix)?;
 
-                if let Some(ancestor) = parent.parent {
-                    self.parent = ancestor;
-                    self.parent_namespaces.pop();
-                } else {
-                    return ErrorKind::UnexpectedCloseElement.into();
-                }
-            }
-            ElementEnd::Open => {
-                let Some(element) = self.element.take() else {
-                    return ErrorKind::UnexpectedCloseElement.into();
-                };
+            let name = &self.doc.elements[element.get()].name;
+            let name_namespace = name.namespace;
+            let name_local = name.local;
 
-                let namespace = self.doc.namespaces.find(&namespaces, element.prefix)?;
-
-                let id = self.append_element_node(ElementData {
-                    name: NameData {
-                        namespace,
-                        local: element.local,
-                    },
-                    attributes_start: attributes.start,
-                    attributes_end: attributes.end,
-                })?;
-
-                self.parent = id;
-                self.parent_namespaces.push(namespaces);
+            if namespace != name_namespace || local != name_local {
+                return ErrorKind::UnexpectedCloseElement.into();
             }
         }
+
+        self.subtree.push(self.parent);
+
+        if let Some(ancestor) = parent.parent {
+            self.parent = ancestor;
+            self.parent_namespaces.pop();
+        } else {
+            return ErrorKind::UnexpectedCloseElement.into();
+        }
+
+        Ok(())
+    }
+
+    pub(crate) fn close_open_element(&mut self) -> Result {
+        let namespaces = self.resolve_namespaces()?;
+        let attributes = self.resolve_attributes(&namespaces)?;
+
+        let Some(element) = self.element.take() else {
+            return ErrorKind::UnexpectedCloseElement.into();
+        };
+
+        let namespace = self.doc.namespaces.find(&namespaces, element.prefix)?;
+
+        let id = self.append_element_node(ElementData {
+            name: NameData {
+                namespace,
+                local: element.local,
+            },
+            attributes_start: attributes.start,
+            attributes_end: attributes.end,
+        })?;
+
+        self.parent = id;
+        self.parent_namespaces.push(namespaces);
 
         Ok(())
     }

@@ -17,16 +17,6 @@ pub(crate) struct Tokenizer<'input> {
 }
 
 #[derive(Clone, Copy)]
-pub(crate) enum ElementEnd<'input> {
-    Empty,
-    Close {
-        prefix: Option<&'input str>,
-        local: &'input str,
-    },
-    Open,
-}
-
-#[derive(Clone, Copy)]
 pub(crate) enum Reference<'input> {
     Char(char),
     Entity(&'input str),
@@ -445,11 +435,11 @@ impl<'input> Tokenizer<'input> {
             let space = self.try_space();
 
             if self.try_literal("/>") {
-                parser.close_element(ElementEnd::Empty)?;
+                parser.close_empty_element()?;
 
                 break false;
             } else if self.try_literal(">") {
-                parser.close_element(ElementEnd::Open)?;
+                parser.close_open_element()?;
 
                 break true;
             } else {
@@ -477,7 +467,7 @@ impl<'input> Tokenizer<'input> {
         self.try_space();
         self.expect_literal(">")?;
 
-        parser.close_element(ElementEnd::Close { prefix, local })
+        parser.close_element(prefix, local)
     }
 
     fn parse_attribute(&mut self) -> Result<(Option<&'input str>, &'input str, &'input str)> {
