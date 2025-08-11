@@ -122,12 +122,7 @@ impl<'input> Tokenizer<'input> {
     }
 
     fn parse_document(&mut self, parser: &mut Parser<'input>) -> Result {
-        self.try_literal("\u{FEFF}");
-        self.try_space();
-
-        if self.try_literal("<?xml") {
-            self.parse_declaration()?;
-        }
+        self.parse_text_declaration()?;
 
         self.parse_miscellaneous()?;
 
@@ -151,7 +146,14 @@ impl<'input> Tokenizer<'input> {
     }
 
     #[cold]
-    fn parse_declaration(&mut self) -> Result {
+    fn parse_text_declaration(&mut self) -> Result {
+        self.try_literal("\u{FEFF}");
+        self.try_space();
+
+        if !self.try_literal("<?xml") {
+            return Ok(());
+        }
+
         self.expect_space()?;
 
         let (prefix, local, _value) = self.parse_attribute()?;
@@ -233,8 +235,21 @@ impl<'input> Tokenizer<'input> {
         let name = self.parse_name()?;
         self.expect_space()?;
 
-        let value = if let Some((_pub_id, _uri)) = self.parse_external_reference()? {
-            None
+        let value = if let Some((pub_id, uri)) = self.parse_external_reference()? {
+            match &mut parser.opts.entity_resolver {
+                Some(resolver) => match resolver(pub_id, uri) {
+                    Ok(Some(mut value)) => {
+                        self.with_text(&mut value, |tokenizer| tokenizer.parse_text_declaration())?;
+
+                        Some(value)
+                    }
+                    Ok(None) => None,
+                    Err(err) => {
+                        return ErrorKind::EntityResolverFailed(name.to_owned(), err).into();
+                    }
+                },
+                None => None,
+            }
         } else {
             let value = self.parse_quoted()?;
 

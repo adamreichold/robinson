@@ -22,6 +22,7 @@ pub enum ErrorKind {
     InvalidReference(String),
     UnknownNamespace(String),
     UnknownEntity(String),
+    EntityResolverFailed(String, String),
 }
 
 impl<T> From<ErrorKind> for Result<T> {
@@ -59,6 +60,9 @@ impl fmt::Display for Error {
             ErrorKind::InvalidReference(value) => write!(fmt, "invalid reference `{value}`")?,
             ErrorKind::UnknownNamespace(prefix) => write!(fmt, "unknown namespace `{prefix}`")?,
             ErrorKind::UnknownEntity(name) => write!(fmt, "unknown entity `{name}`")?,
+            ErrorKind::EntityResolverFailed(name, err) => {
+                write!(fmt, "resolving entity `{name}` failed: {err}")?
+            }
         }
 
         if let Some((line, pos)) = self.pos {
