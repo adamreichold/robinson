@@ -1,5 +1,7 @@
+use std::fmt;
 use std::mem::replace;
 use std::ops::Range;
+use std::result::Result as StdResult;
 
 use memchr::{memchr, memchr_iter, memchr2, memchr3};
 
@@ -15,7 +17,11 @@ use crate::{
 
 impl<'input> Document<'input> {
     pub fn parse(text: &'input str) -> Result<Self> {
-        let mut parser = Parser::new(text)?;
+        Self::parse_with_opts(text, Default::default())
+    }
+
+    pub fn parse_with_opts(text: &'input str, opts: Options<'input>) -> Result<Self> {
+        let mut parser = Parser::new(text, opts)?;
 
         let mut tokenizer = Tokenizer::new(text);
         tokenizer.parse(&mut parser)?;
@@ -34,6 +40,29 @@ impl<'input> Document<'input> {
     }
 }
 
+#[derive(Default)]
+pub struct Options<'input> {
+    pub entity_resolver: Option<&'input mut EntityResolver<'input>>,
+}
+
+pub type EntityResolver<'input> =
+    dyn FnMut(Option<&str>, &str) -> StdResult<Option<&'input str>, String>;
+
+impl fmt::Debug for Options<'_> {
+    fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt.debug_struct("Options")
+            .field(
+                "entity_resolver",
+                &if self.entity_resolver.is_some() {
+                    "Some(..)"
+                } else {
+                    "None"
+                },
+            )
+            .finish()
+    }
+}
+
 pub(crate) struct Parser<'input> {
     doc: DocumentBuilder<'input>,
     element: Option<CurrElement<'input>>,
@@ -45,6 +74,7 @@ pub(crate) struct Parser<'input> {
     entities: Vec<Entity<'input>>,
     entity_depth: u8,
     entity_breadth: u8,
+    pub(crate) opts: Options<'input>,
 }
 
 #[derive(Clone, Copy)]
@@ -66,7 +96,7 @@ struct Entity<'input> {
 }
 
 impl<'input> Parser<'input> {
-    fn new(text: &'input str) -> Result<Self> {
+    fn new(text: &'input str, opts: Options<'input>) -> Result<Self> {
         let nodes = memchr_iter(b'<', text.as_bytes()).count();
         let attributes = memchr_iter(b'=', text.as_bytes()).count();
 
@@ -110,6 +140,7 @@ impl<'input> Parser<'input> {
             entities: Vec::new(),
             entity_depth: 0,
             entity_breadth: 0,
+            opts,
         })
     }
 
