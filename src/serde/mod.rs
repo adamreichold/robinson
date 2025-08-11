@@ -685,11 +685,11 @@ where
             match self.source.peek() {
                 None => return Ok(None),
                 Some(source) => {
-                    if let Source::Node(node) = source {
-                        if self.temp.is_visited(node.id().get()) {
-                            self.source.next().unwrap();
-                            continue;
-                        }
+                    if let Source::Node(node) = source
+                        && self.temp.is_visited(node.id().get())
+                    {
+                        self.source.next().unwrap();
+                        continue;
                     }
 
                     let deserailizer = Deserializer {

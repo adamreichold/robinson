@@ -127,13 +127,13 @@ impl Ord for StringData<'_> {
 pub(crate) fn split_first<const N: usize>(str_: &str, bytes: [u8; N]) -> Option<(u8, &str)> {
     assert!(bytes.is_ascii());
 
-    if let Some(&first) = str_.as_bytes().first() {
-        if bytes.contains(&first) {
-            // SAFETY: `first` is a ASCII character hence followed by a character boundary.
-            let rest = unsafe { str_.get_unchecked(1..) };
+    if let Some(&first) = str_.as_bytes().first()
+        && bytes.contains(&first)
+    {
+        // SAFETY: `first` is a ASCII character hence followed by a character boundary.
+        let rest = unsafe { str_.get_unchecked(1..) };
 
-            return Some((first, rest));
-        }
+        return Some((first, rest));
     }
 
     None
