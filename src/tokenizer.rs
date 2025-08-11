@@ -221,16 +221,7 @@ impl<'input> Tokenizer<'input> {
         let _name = self.parse_name()?;
 
         if self.try_space() {
-            if self.try_literal("PUBLIC") {
-                self.expect_space()?;
-                let _pub_id = self.parse_quoted()?;
-
-                self.expect_space()?;
-                let _sys_id = self.parse_quoted()?;
-            } else if self.try_literal("SYSTEM") {
-                self.expect_space()?;
-                let _sys_id = self.parse_quoted()?;
-            }
+            self.parse_external_reference()?;
         }
 
         Ok(())
@@ -242,13 +233,41 @@ impl<'input> Tokenizer<'input> {
         let name = self.parse_name()?;
         self.expect_space()?;
 
-        let value = self.parse_quoted()?;
+        let value = if let Some((_pub_id, _uri)) = self.parse_external_reference()? {
+            None
+        } else {
+            let value = self.parse_quoted()?;
+
+            Some(value)
+        };
 
         self.try_space();
         self.expect_literal(">")?;
 
-        parser.push_entity(name, value);
+        if let Some(value) = value {
+            parser.push_entity(name, value);
+        }
+
         Ok(())
+    }
+
+    fn parse_external_reference(&mut self) -> Result<Option<(Option<&'input str>, &'input str)>> {
+        if self.try_literal("PUBLIC") {
+            self.expect_space()?;
+            let pub_id = self.parse_quoted()?;
+
+            self.expect_space()?;
+            let uri = self.parse_quoted()?;
+
+            Ok(Some((Some(pub_id), uri)))
+        } else if self.try_literal("SYSTEM") {
+            self.expect_space()?;
+            let uri = self.parse_quoted()?;
+
+            Ok(Some((None, uri)))
+        } else {
+            Ok(None)
+        }
     }
 
     #[cold]
