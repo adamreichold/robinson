@@ -23,7 +23,7 @@ use std::marker::PhantomData;
 use std::num::{NonZeroUsize, ParseFloatError, ParseIntError};
 use std::str::{FromStr, ParseBoolError};
 
-use serde::de;
+use serde_core::de;
 
 use crate::{Attribute, Document, Error as XmlError, Node};
 

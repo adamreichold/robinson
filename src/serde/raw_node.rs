@@ -7,7 +7,7 @@ use std::mem::transmute;
 use std::ops::Deref;
 use std::ptr;
 
-use serde::de;
+use serde_core::de;
 
 use crate::{
     Node,
