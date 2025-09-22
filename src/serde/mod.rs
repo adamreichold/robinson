@@ -23,6 +23,7 @@ use std::marker::PhantomData;
 use std::num::{NonZeroUsize, ParseFloatError, ParseIntError};
 use std::str::{FromStr, ParseBoolError};
 
+use bumpalo::Bump;
 use serde_core::de;
 
 use crate::{Attribute, Document, Error as XmlError, Node};
@@ -35,6 +36,13 @@ where
     T: de::DeserializeOwned,
 {
     defaults().from_str(text)
+}
+
+pub fn from_borrowed_str<'de, T>(text: &'de str, bump: &'de Bump) -> Result<T, Box<Error>>
+where
+    T: de::Deserialize<'de>,
+{
+    defaults().from_borrowed_str(text, bump)
 }
 
 pub fn from_doc<'de, 'input, T>(document: &'de Document<'input>) -> Result<T, Box<Error>>
@@ -57,12 +65,21 @@ pub trait Options: Sized {
     where
         T: de::DeserializeOwned,
     {
-        let document = Document::parse(text).map_err(Error::ParseXml)?;
+        let bump = Bump::new();
+        self.from_borrowed_str(text, &bump)
+    }
+
+    #[allow(clippy::wrong_self_convention)]
+    fn from_borrowed_str<'de, T>(self, text: &'de str, bump: &'de Bump) -> Result<T, Box<Error>>
+    where
+        T: de::Deserialize<'de>,
+    {
+        let document = Document::parse(text, bump).map_err(Error::ParseXml)?;
         self.from_doc(&document)
     }
 
     #[allow(clippy::wrong_self_convention)]
-    fn from_doc<'de, 'input, T>(self, document: &'de Document<'input>) -> Result<T, Box<Error>>
+    fn from_doc<'de, T>(self, document: &Document<'de>) -> Result<T, Box<Error>>
     where
         T: de::Deserialize<'de>,
     {
@@ -71,7 +88,7 @@ pub trait Options: Sized {
     }
 
     #[allow(clippy::wrong_self_convention)]
-    fn from_node<'de, 'input, T>(self, node: Node<'de, 'input>) -> Result<T, Box<Error>>
+    fn from_node<'de, T>(self, node: Node<'_, 'de>) -> Result<T, Box<Error>>
     where
         T: de::Deserialize<'de>,
     {
@@ -334,7 +351,7 @@ where
         }))
     }
 
-    fn text(&self) -> Cow<'doc, str> {
+    fn text(&self) -> Cow<'input, str> {
         match self.source {
             Source::Node(node) | Source::Content(node) => {
                 node.child_text().unwrap_or(Cow::Borrowed(""))
@@ -354,7 +371,7 @@ where
     }
 }
 
-impl<'de, O> de::Deserializer<'de> for Deserializer<'de, '_, '_, O>
+impl<'de, O> de::Deserializer<'de> for Deserializer<'_, 'de, '_, O>
 where
     O: Options,
 {
@@ -637,9 +654,9 @@ where
     options: PhantomData<O>,
 }
 
-impl<'de, 'input, I, O> de::SeqAccess<'de> for SeqAccess<'de, 'input, '_, I, O>
+impl<'de, 'doc, I, O> de::SeqAccess<'de> for SeqAccess<'doc, 'de, '_, I, O>
 where
-    I: Iterator<Item = Node<'de, 'input>>,
+    I: Iterator<Item = Node<'doc, 'de>>,
     O: Options,
 {
     type Error = Box<Error>;
@@ -674,9 +691,9 @@ where
     options: PhantomData<O>,
 }
 
-impl<'de, 'input, I, O> de::MapAccess<'de> for MapAccess<'de, 'input, '_, I, O>
+impl<'de, 'doc, I, O> de::MapAccess<'de> for MapAccess<'doc, 'de, '_, I, O>
 where
-    I: Iterator<Item = Source<'de, 'input>>,
+    I: Iterator<Item = Source<'doc, 'de>>,
     O: Options,
 {
     type Error = Box<Error>;
@@ -733,13 +750,13 @@ where
     options: PhantomData<O>,
 }
 
-impl<'de, 'input, 'temp, I, O> de::EnumAccess<'de> for EnumAccess<'de, 'input, 'temp, I, O>
+impl<'de, 'doc, 'temp, I, O> de::EnumAccess<'de> for EnumAccess<'doc, 'de, 'temp, I, O>
 where
-    I: Iterator<Item = Source<'de, 'input>>,
+    I: Iterator<Item = Source<'doc, 'de>>,
     O: Options,
 {
     type Error = Box<Error>;
-    type Variant = Deserializer<'de, 'input, 'temp, O>;
+    type Variant = Deserializer<'doc, 'de, 'temp, O>;
 
     fn variant_seed<V>(mut self, seed: V) -> Result<(V::Value, Self::Variant), Self::Error>
     where
@@ -769,7 +786,7 @@ where
     }
 }
 
-impl<'de, O> de::VariantAccess<'de> for Deserializer<'de, '_, '_, O>
+impl<'de, O> de::VariantAccess<'de> for Deserializer<'_, 'de, '_, O>
 where
     O: Options,
 {
@@ -1103,7 +1120,8 @@ mod tests {
 
     #[test]
     fn borrowed_str() {
-        let doc = Document::parse("<root><child>foobar</child></root>").unwrap();
+        let bump = Bump::new();
+        let doc = Document::parse("<root><child>foobar</child></root>", &bump).unwrap();
 
         #[derive(Deserialize)]
         struct Root<'a> {

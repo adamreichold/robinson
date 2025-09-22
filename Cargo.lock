@@ -9,6 +9,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c3d036a3c4ab069c7b410a2ce876bd74808d2d0888a82667669f8e783a898bf1"
 
 [[package]]
+name = "bumpalo"
+version = "3.19.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "46c5e41b57b8bba42a04676d81cb89e9ee8e859a1a66f80a5a72e1cb76b34d43"
+
+[[package]]
 name = "cc"
 version = "1.2.37"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -120,6 +126,7 @@ checksum = "69cdb34c158ceb288df11e18b4bd39de994f6657d83847bdffdbd7f346754b0f"
 name = "robinson"
 version = "0.4.8"
 dependencies = [
+ "bumpalo",
  "memchr",
  "pretty_assertions",
  "serde",
@@ -130,6 +137,7 @@ dependencies = [
 name = "robinson-fuzz"
 version = "0.0.0"
 dependencies = [
+ "bumpalo",
  "libfuzzer-sys",
  "robinson",
 ]

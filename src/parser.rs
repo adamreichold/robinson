@@ -1,6 +1,7 @@
 use std::mem::replace;
 use std::ops::Range;
 
+use bumpalo::{Bump, collections::String as BumpString};
 use memchr::{memchr, memchr_iter, memchr2, memchr3};
 
 use crate::{
@@ -9,13 +10,12 @@ use crate::{
     error::{ErrorKind, Result},
     namespaces::NamespaceData,
     nodes::{ElementData, NodeData, NodeId},
-    strings::StringData,
     tokenizer::{Reference, Tokenizer},
 };
 
 impl<'input> Document<'input> {
-    pub fn parse(text: &'input str) -> Result<Self> {
-        let mut parser = Parser::new(text)?;
+    pub fn parse(text: &'input str, bump: &'input Bump) -> Result<Self> {
+        let mut parser = Parser::new(text, bump)?;
 
         let mut tokenizer = Tokenizer::new(text);
         tokenizer.parse(&mut parser)?;
@@ -24,7 +24,7 @@ impl<'input> Document<'input> {
             return ErrorKind::UnclosedRootElement.into();
         }
 
-        let doc = parser.doc.build();
+        let doc = parser.doc.build(bump);
 
         if !doc.root().children().any(|child| child.is_element()) {
             return ErrorKind::MissingRootElement.into();
@@ -35,6 +35,7 @@ impl<'input> Document<'input> {
 }
 
 pub(crate) struct Parser<'input> {
+    bump: &'input Bump,
     doc: DocumentBuilder<'input>,
     element: Option<CurrElement<'input>>,
     parent: NodeId,
@@ -56,7 +57,7 @@ struct CurrElement<'input> {
 struct CurrAttribute<'input> {
     prefix: Option<&'input str>,
     local: &'input str,
-    value: StringData<'input>,
+    value: &'input str,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -66,7 +67,7 @@ struct Entity<'input> {
 }
 
 impl<'input> Parser<'input> {
-    fn new(text: &'input str) -> Result<Self> {
+    fn new(text: &'input str, bump: &'input Bump) -> Result<Self> {
         let nodes = memchr_iter(b'<', text.as_bytes()).count();
         let attributes = memchr_iter(b'=', text.as_bytes()).count();
 
@@ -89,12 +90,13 @@ impl<'input> Parser<'input> {
 
         doc.namespaces.push(NamespaceData {
             name: Some("xml"),
-            uri: StringData::borrowed("http://www.w3.org/XML/1998/namespace"),
+            uri: "http://www.w3.org/XML/1998/namespace",
         })?;
 
         let namespaces_offset = doc.namespaces.len();
 
         Ok(Self {
+            bump,
             doc,
             element: None,
             parent: NodeId::new(0).unwrap(),
@@ -128,7 +130,7 @@ impl<'input> Parser<'input> {
         let value = self.normalize_attribute_value(tokenizer, value)?;
 
         if prefix == Some("xmlns") {
-            if value.as_ref() != "http://www.w3.org/XML/1998/namespace" {
+            if value != "http://www.w3.org/XML/1998/namespace" {
                 self.doc.namespaces.push(NamespaceData {
                     name: Some(local),
                     uri: value,
@@ -263,7 +265,7 @@ impl<'input> Parser<'input> {
         self.append_node(Some(id), None)
     }
 
-    fn append_text_node(&mut self, text: StringData<'input>) -> Result<()> {
+    fn append_text_node(&mut self, text: &'input str) -> Result<()> {
         let id = NodeId::new(self.doc.texts.len())?;
 
         self.doc.texts.push(text);
@@ -283,7 +285,7 @@ impl<'input> Parser<'input> {
         let pos = memchr2(b'&', b'\r', text.as_bytes());
 
         if pos.is_none() {
-            self.append_text_node(StringData::borrowed(text))?;
+            self.append_text_node(text)?;
             return Ok(());
         }
 
@@ -297,7 +299,7 @@ impl<'input> Parser<'input> {
         mut text: &'input str,
         mut pos: Option<usize>,
     ) -> Result {
-        let mut buf = String::with_capacity(text.len());
+        let mut buf = BumpString::with_capacity_in(text.len(), self.bump);
         let mut was_cr = false;
 
         while let Some(pos1) = pos {
@@ -345,9 +347,12 @@ impl<'input> Parser<'input> {
                             let mut value = self.find_entity(name)?;
 
                             if !buf.is_empty() {
-                                let buf = replace(&mut buf, String::with_capacity(text.len()));
+                                let buf = replace(
+                                    &mut buf,
+                                    BumpString::with_capacity_in(text.len(), self.bump),
+                                );
 
-                                self.append_text_node(StringData::owned(buf.into_boxed_str()))?;
+                                self.append_text_node(buf.into_bump_str())?;
                             }
 
                             self.open_entity()?;
@@ -369,7 +374,7 @@ impl<'input> Parser<'input> {
         buf.push_str(text);
 
         if !buf.is_empty() {
-            self.append_text_node(StringData::owned(buf.into_boxed_str()))?;
+            self.append_text_node(buf.into_bump_str())?;
         }
 
         Ok(())
@@ -379,7 +384,7 @@ impl<'input> Parser<'input> {
         let pos = memchr(b'\r', cdata.as_bytes());
 
         if pos.is_none() {
-            self.append_text_node(StringData::borrowed(cdata))?;
+            self.append_text_node(cdata)?;
             return Ok(());
         }
 
@@ -388,7 +393,7 @@ impl<'input> Parser<'input> {
 
     #[inline(never)]
     fn append_cdata_impl(&mut self, mut cdata: &'input str, mut pos: Option<usize>) -> Result {
-        let mut buf = String::with_capacity(cdata.len());
+        let mut buf = BumpString::with_capacity_in(cdata.len(), self.bump);
 
         while let Some(pos1) = pos {
             let (line, rest) = cdata.split_at(pos1);
@@ -406,7 +411,7 @@ impl<'input> Parser<'input> {
 
         buf.push_str(cdata);
 
-        self.append_text_node(StringData::owned(buf.into_boxed_str()))?;
+        self.append_text_node(buf.into_bump_str())?;
         Ok(())
     }
 
@@ -414,19 +419,19 @@ impl<'input> Parser<'input> {
         &mut self,
         tokenizer: &mut Tokenizer<'input>,
         value: &'input str,
-    ) -> Result<StringData<'input>> {
+    ) -> Result<&'input str> {
         let pos_entity = memchr(b'&', value.as_bytes());
         let pos_space = memchr3(b'\t', b'\r', b'\n', value.as_bytes());
 
         if pos_entity.is_none() && pos_space.is_none() {
-            return Ok(StringData::borrowed(value));
+            return Ok(value);
         }
 
-        let mut buf = String::with_capacity(value.len());
+        let mut buf = BumpString::with_capacity_in(value.len(), self.bump);
 
         self.normalize_attribute_value_impl(tokenizer, value, pos_entity, pos_space, &mut buf)?;
 
-        Ok(StringData::owned(buf.into_boxed_str()))
+        Ok(buf.into_bump_str())
     }
 
     #[inline(never)]
@@ -436,7 +441,7 @@ impl<'input> Parser<'input> {
         mut value: &'input str,
         mut pos_entity: Option<usize>,
         mut pos_space: Option<usize>,
-        buf: &mut String,
+        buf: &mut BumpString<'input>,
     ) -> Result {
         while let Some(mut pos) = pos_entity {
             while let Some(pos1) = pos_space {

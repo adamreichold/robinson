@@ -1,11 +1,7 @@
 use std::fmt;
 use std::slice::Iter;
 
-use crate::{
-    Document, Name, NameData,
-    nodes::Node,
-    strings::{StringData, packed_string_data_ref},
-};
+use crate::{Document, Name, NameData, nodes::Node};
 
 impl<'doc, 'input> Node<'doc, 'input> {
     pub fn has_attributes(self) -> bool {
@@ -29,13 +25,15 @@ impl<'doc, 'input> Node<'doc, 'input> {
     }
 
     /// ```
+    /// # use bumpalo::Bump;
     /// # use robinson::Document;
-    /// let doc = Document::parse(r#"<root foo="bar" baz="qux"/>"#).unwrap();
+    /// let bump = Bump::new();
+    /// let doc = Document::parse(r#"<root foo="bar" baz="qux"/>"#, &bump).unwrap();
     ///
     /// let baz = doc.root_element().attribute("baz");
     ///
     /// assert_eq!(baz, Some("qux"));
-    pub fn attribute(self, name: &str) -> Option<&'doc str> {
+    pub fn attribute(self, name: &str) -> Option<&'input str> {
         self.attributes()
             .find(|attribute| attribute.name() == name)
             .map(|attribute| attribute.value())
@@ -53,19 +51,20 @@ impl<'doc, 'input> Attribute<'doc, 'input> {
         self.doc
     }
 
-    pub fn name(self) -> Name<'doc, 'input> {
+    pub fn name(self) -> Name<'input> {
         self.data.name.get(self.doc)
     }
 
-    pub fn value(self) -> &'doc str {
-        packed_string_data_ref!(self.data, value)
+    pub fn value(self) -> &'input str {
+        self.data.value
     }
 }
 
+#[derive(Clone, Copy)]
 #[repr(Rust, packed)]
 pub(crate) struct AttributeData<'input> {
     pub(crate) name: NameData<'input>,
-    pub(crate) value: StringData<'input>,
+    pub(crate) value: &'input str,
 }
 
 const _SIZE_OF_ATTRIBUTE_DATA: () =

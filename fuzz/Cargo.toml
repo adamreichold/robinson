@@ -8,6 +8,7 @@ edition = "2024"
 cargo-fuzz = true
 
 [dependencies]
+bumpalo = { version = "3", default-features = false }
 libfuzzer-sys = "0.4"
 robinson = { path = ".." }
 

@@ -18,10 +18,13 @@ mod tokenizer;
 use std::fmt;
 use std::num::NonZeroUsize;
 
+use bumpalo::Bump;
+
 use attributes::AttributeData;
 use namespaces::{Namespace, Namespaces, NamespacesBuilder};
 use nodes::{ElementData, NodeData};
-use strings::StringData;
+
+pub use bumpalo;
 
 pub use attributes::{Attribute, Attributes};
 pub use error::{Error, ErrorKind};
@@ -30,7 +33,7 @@ pub use nodes::{Children, Descendants, Node, NodeId};
 pub struct Document<'input> {
     nodes: Box<[NodeData]>,
     elements: Box<[ElementData<'input>]>,
-    texts: Box<[StringData<'input>]>,
+    texts: Box<[&'input str]>,
     attributes: Box<[AttributeData<'input>]>,
     namespaces: Namespaces<'input>,
 }
@@ -52,32 +55,34 @@ impl Document<'_> {
 struct DocumentBuilder<'input> {
     nodes: Vec<NodeData>,
     elements: Vec<ElementData<'input>>,
-    texts: Vec<StringData<'input>>,
+    texts: Vec<&'input str>,
     attributes: Vec<AttributeData<'input>>,
     namespaces: NamespacesBuilder<'input>,
 }
 
 impl<'input> DocumentBuilder<'input> {
-    fn build(self) -> Document<'input> {
+    fn build(self, bump: &'input Bump) -> Document<'input> {
         Document {
             nodes: self.nodes.into_boxed_slice(),
             elements: self.elements.into_boxed_slice(),
             texts: self.texts.into_boxed_slice(),
             attributes: self.attributes.into_boxed_slice(),
-            namespaces: self.namespaces.build(),
+            namespaces: self.namespaces.build(bump),
         }
     }
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Name<'doc, 'input> {
-    pub namespace: Option<&'doc str>,
+pub struct Name<'input> {
+    pub namespace: Option<&'input str>,
     pub local: &'input str,
 }
 
 /// ```
+/// # use bumpalo::Bump;
 /// # use robinson::Document;
-/// let doc = Document::parse(r#"<foo xmlns="http://bar"/>"#).unwrap();
+/// let bump = Bump::new();
+/// let doc = Document::parse(r#"<foo xmlns="http://bar"/>"#, &bump).unwrap();
 ///
 /// let root_name = doc.root_element().name().unwrap();
 ///
@@ -86,7 +91,7 @@ pub struct Name<'doc, 'input> {
 ///
 /// assert_eq!(root_name, "foo");
 /// ```
-impl PartialEq<&str> for Name<'_, '_> {
+impl PartialEq<&str> for Name<'_> {
     fn eq(&self, other: &&str) -> bool {
         self.local == *other
     }
@@ -103,7 +108,7 @@ const _SIZE_OF_NAME_DATA: () =
     assert!(size_of::<NameData<'static>>() == size_of::<u16>() + 2 * size_of::<usize>());
 
 impl<'input> NameData<'input> {
-    fn get<'doc>(self, doc: &'doc Document) -> Name<'doc, 'input> {
+    fn get(self, doc: &Document<'input>) -> Name<'input> {
         let namespace = self
             .namespace
             .map(|namespace| doc.namespaces.get(namespace));
@@ -123,7 +128,7 @@ impl fmt::Debug for Document<'_> {
     }
 }
 
-impl fmt::Debug for Name<'_, '_> {
+impl fmt::Debug for Name<'_> {
     fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self.namespace {
             Some(namespace) => write!(fmt, "\"{{{}}}{}\"", namespace, self.local),

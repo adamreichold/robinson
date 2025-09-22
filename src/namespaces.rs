@@ -1,18 +1,17 @@
 use std::num::NonZeroU16;
 use std::ops::Range;
 
-use crate::{
-    error::{ErrorKind, Result},
-    strings::StringData,
-};
+use bumpalo::Bump;
+
+use crate::error::{ErrorKind, Result};
 
 pub(crate) struct Namespaces<'input> {
-    uris: Box<[StringData<'input>]>,
+    uris: &'input [&'input str],
 }
 
-impl Namespaces<'_> {
-    pub(crate) fn get(&self, namespace: Namespace) -> &str {
-        self.uris[namespace.get()].as_ref()
+impl<'input> Namespaces<'input> {
+    pub(crate) fn get(&self, namespace: Namespace) -> &'input str {
+        self.uris[namespace.get()]
     }
 }
 
@@ -24,9 +23,9 @@ pub(crate) struct NamespacesBuilder<'input> {
 }
 
 impl<'input> NamespacesBuilder<'input> {
-    pub(crate) fn build(self) -> Namespaces<'input> {
+    pub(crate) fn build(self, bump: &'input Bump) -> Namespaces<'input> {
         Namespaces {
-            uris: self.data.into_iter().map(|data| data.uri).collect(),
+            uris: bump.alloc_slice_fill_iter(self.data.into_iter().map(|data| data.uri)),
         }
     }
 
@@ -128,7 +127,7 @@ impl Default for Namespace {
 #[derive(PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) struct NamespaceData<'input> {
     pub(crate) name: Option<&'input str>,
-    pub(crate) uri: StringData<'input>,
+    pub(crate) uri: &'input str,
 }
 
 const _SIZE_OF_NAMESPACE_DATA: () =

@@ -9,7 +9,6 @@ use std::slice::Iter;
 use crate::{
     Document, Name, NameData,
     error::{ErrorKind, Result},
-    strings::StringData,
 };
 
 impl<'input> Document<'input> {
@@ -99,10 +98,6 @@ impl<'doc, 'input> Node<'doc, 'input> {
 
     pub fn is_text(&self) -> bool {
         self.data.text.is_some()
-    }
-
-    pub(crate) fn text_data(self) -> Option<&'doc StringData<'input>> {
-        self.data.text.map(|text| &self.doc.texts[text.get()])
     }
 
     fn other(self, id: NodeId) -> Self {
@@ -196,8 +191,10 @@ impl<'doc, 'input> Node<'doc, 'input> {
     }
 
     /// ```
+    /// # use bumpalo::Bump;
     /// # use robinson::{Document, Name};
-    /// let doc = Document::parse(r#"<root><parent><child/></parent></root>"#).unwrap();
+    /// let bump = Bump::new();
+    /// let doc = Document::parse(r#"<root><parent><child/></parent></root>"#, &bump).unwrap();
     ///
     /// let mut nodes = doc.root_element().descendants();
     ///
@@ -228,56 +225,64 @@ impl<'doc, 'input> Node<'doc, 'input> {
         }
     }
 
-    pub fn name(self) -> Option<Name<'doc, 'input>> {
+    pub fn name(self) -> Option<Name<'input>> {
         self.element_data()
             .map(|element| element.name.get(self.doc))
     }
 
     pub fn has_name<N>(self, name: N) -> bool
     where
-        Name<'doc, 'input>: PartialEq<N>,
+        Name<'input>: PartialEq<N>,
     {
         self.name().is_some_and(|name1| name1 == name)
     }
 
-    pub fn text(self) -> Option<&'doc str> {
-        self.text_data().map(AsRef::as_ref)
+    pub fn text(self) -> Option<&'input str> {
+        self.data.text.map(|text| self.doc.texts[text.get()])
     }
 
-    pub fn child_texts(self) -> impl Iterator<Item = &'doc str> + Clone {
+    pub fn child_texts(self) -> impl Iterator<Item = &'input str> + Clone {
         self.children().filter_map(Self::text)
     }
 
     /// ```
     /// # use std::borrow::Cow;
+    /// #
+    /// # use bumpalo::Bump;
     /// # use robinson::Document;
-    /// let doc = Document::parse(r#"<root>foo<child>bar</child>baz</root>"#).unwrap();
+    /// let bump = Bump::new();
+    /// let doc = Document::parse(r#"<root>foo<child>bar</child>baz</root>"#, &bump).unwrap();
     ///
     /// let text = doc.root_element().child_text();
     ///
     /// assert_eq!(text, Some(Cow::Owned("foobaz".to_owned())));
-    pub fn child_text(self) -> Option<Cow<'doc, str>> {
+    pub fn child_text(self) -> Option<Cow<'input, str>> {
         collect_text(self.child_texts())
     }
 
-    pub fn descedant_texts(self) -> impl Iterator<Item = &'doc str> + Clone {
+    pub fn descedant_texts(self) -> impl Iterator<Item = &'input str> + Clone {
         self.descendants().filter_map(Self::text)
     }
 
     /// ```
     /// # use std::borrow::Cow;
+    /// #
+    /// # use bumpalo::Bump;
     /// # use robinson::Document;
-    /// let doc = Document::parse(r#"<root>foo<child>bar</child>baz</root>"#).unwrap();
+    /// let bump = Bump::new();
+    /// let doc = Document::parse(r#"<root>foo<child>bar</child>baz</root>"#, &bump).unwrap();
     ///
     /// let text = doc.root_element().descedant_text();
     ///
     /// assert_eq!(text, Some(Cow::Owned("foobarbaz".to_owned())));
-    pub fn descedant_text(self) -> Option<Cow<'doc, str>> {
+    pub fn descedant_text(self) -> Option<Cow<'input, str>> {
         collect_text(self.descedant_texts())
     }
 }
 
-fn collect_text<'doc>(mut iter: impl Iterator<Item = &'doc str> + Clone) -> Option<Cow<'doc, str>> {
+fn collect_text<'input>(
+    mut iter: impl Iterator<Item = &'input str> + Clone,
+) -> Option<Cow<'input, str>> {
     let mut cnt = 0;
     let mut len = 0;
 
@@ -303,6 +308,7 @@ fn collect_text<'doc>(mut iter: impl Iterator<Item = &'doc str> + Clone) -> Opti
     Some(Cow::Owned(buf))
 }
 
+#[derive(Clone, Copy)]
 pub(crate) struct NodeData {
     pub(crate) element: Option<NodeId>,
     pub(crate) text: Option<NodeId>,
@@ -314,6 +320,7 @@ pub(crate) struct NodeData {
 
 const _SIZE_OF_NODE_DATA: () = assert!(size_of::<NodeData>() == 3 * size_of::<usize>());
 
+#[derive(Clone, Copy)]
 #[repr(Rust, packed)]
 pub(crate) struct ElementData<'input> {
     pub(crate) name: NameData<'input>,

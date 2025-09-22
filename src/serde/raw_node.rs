@@ -15,16 +15,18 @@ use crate::{
 };
 
 /// ```
-/// use serde::Deserialize;
-/// use robinson::{serde::{from_doc, RawNode}, Document};
-///
+/// # use bumpalo::Bump;
+/// # use robinson::{serde::{from_doc, RawNode}, Document};
+/// # use serde::Deserialize;
+/// #
 /// #[derive(Deserialize)]
 /// struct Record<'a> {
 ///     #[serde(borrow)]
 ///     subtree: RawNode<'a>,
 /// }
 ///
-/// let document = Document::parse(r#"<document><subtree><field attribute="bar">foo</field></subtree></document>"#).unwrap();
+/// let bump = Bump::new();
+/// let document = Document::parse(r#"<document><subtree><field attribute="bar">foo</field></subtree></document>"#, &bump).unwrap();
 ///
 /// let record = from_doc::<Record>(&document).unwrap();
 ///
@@ -122,6 +124,7 @@ impl Drop for ResetCurrNode {
 mod tests {
     use super::*;
 
+    use bumpalo::Bump;
     use serde::Deserialize;
 
     use crate::{Document, serde::from_doc};
@@ -134,7 +137,12 @@ mod tests {
             foo: RawNode<'a>,
         }
 
-        let doc = Document::parse(r#"<root><foo><bar qux="42">23</bar>baz</foo></root>"#).unwrap();
+        let bump = Bump::new();
+        let doc = Document::parse(
+            r#"<root><foo><bar qux="42">23</bar>baz</foo></root>"#,
+            &bump,
+        )
+        .unwrap();
         let val = from_doc::<Root>(&doc).unwrap();
 
         assert!(val.foo.0.is_element());

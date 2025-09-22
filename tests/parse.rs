@@ -1,6 +1,7 @@
 use std::env::var;
 use std::fs::{exists, read_dir, read_to_string, write};
 
+use bumpalo::Bump;
 use pretty_assertions::assert_eq;
 use robinson::Document;
 
@@ -9,8 +10,9 @@ fn test(name: &str) {
     let output = format!("tests/outputs/{name}.dbg");
 
     let text = read_to_string(&input).unwrap();
+    let bump = Bump::new();
 
-    let res = Document::parse(&text);
+    let res = Document::parse(&text, &bump);
     let ast = format!("{res:#?}\n");
 
     let expected_ast = read_to_string(&output).unwrap();
