@@ -4,7 +4,7 @@ use memchr::{memchr, memmem::Finder};
 
 use crate::{
     error::{Error, ErrorKind, Result},
-    parser::Parser,
+    parser::{Entity, Parser},
     strings::{split_first, split_once},
 };
 
@@ -146,7 +146,7 @@ impl<'input> Tokenizer<'input> {
     }
 
     #[cold]
-    fn parse_text_declaration(&mut self) -> Result {
+    pub(crate) fn parse_text_declaration(&mut self) -> Result {
         self.try_literal("\u{FEFF}");
         self.try_space();
 
@@ -235,33 +235,18 @@ impl<'input> Tokenizer<'input> {
         let name = self.parse_name()?;
         self.expect_space()?;
 
-        let value = if let Some((pub_id, uri)) = self.parse_external_reference()? {
-            match &mut parser.opts.entity_resolver {
-                Some(resolver) => match resolver(pub_id, uri) {
-                    Ok(Some(mut value)) => {
-                        self.with_text(&mut value, |tokenizer| tokenizer.parse_text_declaration())?;
-
-                        Some(value)
-                    }
-                    Ok(None) => None,
-                    Err(err) => {
-                        return ErrorKind::EntityResolverFailed(name.to_owned(), err).into();
-                    }
-                },
-                None => None,
-            }
+        let entity = if let Some((pub_id, uri)) = self.parse_external_reference()? {
+            Entity::Unresolved { name, pub_id, uri }
         } else {
             let value = self.parse_quoted()?;
 
-            Some(value)
+            Entity::Resolved { name, value }
         };
 
         self.try_space();
         self.expect_literal(">")?;
 
-        if let Some(value) = value {
-            parser.push_entity(name, value);
-        }
+        parser.push_entity(entity);
 
         Ok(())
     }

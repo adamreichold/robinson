@@ -90,9 +90,25 @@ struct CurrAttribute<'input> {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-struct Entity<'input> {
-    name: &'input str,
-    value: &'input str,
+pub(crate) enum Entity<'input> {
+    Resolved {
+        name: &'input str,
+        value: &'input str,
+    },
+    Unresolved {
+        name: &'input str,
+        pub_id: Option<&'input str>,
+        uri: &'input str,
+    },
+}
+
+impl Entity<'_> {
+    fn name(&self) -> &str {
+        match self {
+            Self::Resolved { name, .. } => name,
+            Self::Unresolved { name, .. } => name,
+        }
+    }
 }
 
 impl<'input> Parser<'input> {
@@ -390,7 +406,7 @@ impl<'input> Parser<'input> {
                             }
                         }
                         Reference::Entity(name) => {
-                            let mut value = self.find_entity(name)?;
+                            let mut value = self.find_entity(tokenizer, name)?;
 
                             if !buf.is_empty() {
                                 let text = buf.finish()?;
@@ -546,7 +562,7 @@ impl<'input> Parser<'input> {
                     buf.push(char_);
                 }
                 Reference::Entity(name) => {
-                    let value = self.find_entity(name)?;
+                    let value = self.find_entity(tokenizer, name)?;
 
                     let pos_entity = memchr(b'&', value.as_bytes());
                     let pos_space = memchr3(b'\t', b'\r', b'\n', value.as_bytes());
@@ -636,22 +652,62 @@ impl<'input> Parser<'input> {
         Ok(old_len as u32..new_len as u32)
     }
 
-    pub(crate) fn push_entity(&mut self, name: &'input str, value: &'input str) {
+    pub(crate) fn push_entity(&mut self, entity: Entity<'input>) {
         if let Err(idx) = self
             .entities
-            .binary_search_by_key(&name, |entity| entity.name)
+            .binary_search_by_key(&entity.name(), |entity| entity.name())
         {
-            self.entities.insert(idx, Entity { name, value });
+            self.entities.insert(idx, entity);
         }
     }
 
-    fn find_entity(&self, name: &'input str) -> Result<&'input str> {
+    fn find_entity(
+        &mut self,
+        tokenizer: &mut Tokenizer<'input>,
+        name: &'input str,
+    ) -> Result<&'input str> {
         match self
             .entities
-            .binary_search_by_key(&name, |entity| entity.name)
+            .binary_search_by_key(&name, |entity| entity.name())
         {
-            Ok(idx) => Ok(self.entities[idx].value),
+            Ok(idx) => match &self.entities[idx] {
+                Entity::Resolved { value, .. } => Ok(value),
+                Entity::Unresolved { .. } => self.resolve_entity(tokenizer, idx),
+            },
             Err(_idx) => ErrorKind::UnknownEntity(name.to_owned()).into(),
+        }
+    }
+
+    #[cold]
+    #[inline(never)]
+    fn resolve_entity(
+        &mut self,
+        tokenizer: &mut Tokenizer<'input>,
+        idx: usize,
+    ) -> Result<&'input str> {
+        match &self.entities[idx] {
+            Entity::Resolved { .. } => unreachable!(),
+            Entity::Unresolved { name, pub_id, uri } => {
+                if let Some(resolver) = &mut self.opts.entity_resolver {
+                    match resolver(*pub_id, uri) {
+                        Ok(Some(mut value)) => {
+                            tokenizer.with_text(&mut value, |tokenizer| {
+                                tokenizer.parse_text_declaration()
+                            })?;
+
+                            self.entities[idx] = Entity::Resolved { name, value };
+
+                            return Ok(value);
+                        }
+                        Ok(None) => (),
+                        Err(err) => {
+                            return ErrorKind::EntityResolverFailed((*name).to_owned(), err).into();
+                        }
+                    }
+                }
+
+                ErrorKind::UnknownEntity((*name).to_owned()).into()
+            }
         }
     }
 
