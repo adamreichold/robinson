@@ -1,4 +1,4 @@
-use std::mem::{replace, take};
+use std::mem::replace;
 use std::ops::Range;
 
 use memchr::{memchr, memchr_iter, memchr2, memchr3};
@@ -297,7 +297,7 @@ impl<'input> Parser<'input> {
         mut text: &'input str,
         mut pos: Option<usize>,
     ) -> Result {
-        let mut buf = String::new();
+        let mut buf = String::with_capacity(text.len());
         let mut was_cr = false;
 
         while let Some(pos1) = pos {
@@ -345,9 +345,9 @@ impl<'input> Parser<'input> {
                             let mut value = self.find_entity(name)?;
 
                             if !buf.is_empty() {
-                                self.append_text_node(StringData::owned(
-                                    take(&mut buf).into_boxed_str(),
-                                ))?;
+                                let buf = replace(&mut buf, String::with_capacity(text.len()));
+
+                                self.append_text_node(StringData::owned(buf.into_boxed_str()))?;
                             }
 
                             self.open_entity()?;
@@ -388,7 +388,7 @@ impl<'input> Parser<'input> {
 
     #[inline(never)]
     fn append_cdata_impl(&mut self, mut cdata: &'input str, mut pos: Option<usize>) -> Result {
-        let mut buf = String::new();
+        let mut buf = String::with_capacity(cdata.len());
 
         while let Some(pos1) = pos {
             let (line, rest) = cdata.split_at(pos1);
@@ -422,7 +422,7 @@ impl<'input> Parser<'input> {
             return Ok(StringData::borrowed(value));
         }
 
-        let mut buf = String::new();
+        let mut buf = String::with_capacity(value.len());
 
         self.normalize_attribute_value_impl(tokenizer, value, pos_entity, pos_space, &mut buf)?;
 
@@ -473,10 +473,12 @@ impl<'input> Parser<'input> {
                 Reference::Char(char_) => {
                     let is_entity = self.entity_depth != 0;
 
-                    match char_ {
-                        '\t' | '\r' | '\n' if is_entity => buf.push(' '),
-                        char_ => buf.push(char_),
-                    }
+                    let char_ = match char_ {
+                        '\t' | '\r' | '\n' if is_entity => ' ',
+                        char_ => char_,
+                    };
+
+                    buf.push(char_);
                 }
                 Reference::Entity(name) => {
                     let value = self.find_entity(name)?;
