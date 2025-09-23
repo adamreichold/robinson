@@ -157,17 +157,17 @@ where
     const ONLY_CHILDREN: bool = true;
 }
 
-struct Deserializer<'de, 'input, 'temp, O> {
-    source: Source<'de, 'input>,
+struct Deserializer<'doc, 'input, 'temp, O> {
+    source: Source<'doc, 'input>,
     temp: &'temp mut Temp,
     options: PhantomData<O>,
 }
 
 #[derive(Clone, Copy)]
-enum Source<'de, 'input> {
-    Node(Node<'de, 'input>),
-    Attribute(Attribute<'de, 'input>),
-    Content(Node<'de, 'input>),
+enum Source<'doc, 'input> {
+    Node(Node<'doc, 'input>),
+    Attribute(Attribute<'doc, 'input>),
+    Content(Node<'doc, 'input>),
 }
 
 impl Source<'_, '_> {
@@ -272,7 +272,7 @@ impl Temp {
 
 const USIZE_BITS: usize = usize::BITS as usize;
 
-impl<'de, 'input, O> Deserializer<'de, 'input, '_, O>
+impl<'doc, 'input, O> Deserializer<'doc, 'input, '_, O>
 where
     O: Options,
 {
@@ -280,7 +280,7 @@ where
         self.source.name::<O>(&mut self.temp.buffer)
     }
 
-    fn node(&self) -> Result<Node<'de, 'input>, Box<Error>> {
+    fn node(&self) -> Result<Node<'doc, 'input>, Box<Error>> {
         match self.source {
             Source::Node(node) | Source::Content(node) => Ok(node),
             Source::Attribute(_) => Error::MissingNode.into(),
@@ -289,7 +289,7 @@ where
 
     fn children(
         &self,
-    ) -> Result<impl Iterator<Item = Source<'de, 'input>> + use<'de, 'input, O>, Box<Error>> {
+    ) -> Result<impl Iterator<Item = Source<'doc, 'input>> + use<'doc, 'input, O>, Box<Error>> {
         let node = self.node()?;
 
         let children = node
@@ -302,7 +302,7 @@ where
 
     fn children_and_attributes(
         &self,
-    ) -> Result<impl Iterator<Item = Source<'de, 'input>> + use<'de, 'input, O>, Box<Error>> {
+    ) -> Result<impl Iterator<Item = Source<'doc, 'input>> + use<'doc, 'input, O>, Box<Error>> {
         let node = self.node()?;
 
         let children = node
@@ -317,7 +317,9 @@ where
         Ok(children.chain(attributes).chain(content))
     }
 
-    fn siblings(&self) -> Result<impl Iterator<Item = Node<'de, 'de>> + use<'de, O>, Box<Error>> {
+    fn siblings(
+        &self,
+    ) -> Result<impl Iterator<Item = Node<'doc, 'input>> + use<'doc, 'input, O>, Box<Error>> {
         let node = self.node()?;
         let name = node.name();
 
@@ -332,7 +334,7 @@ where
         }))
     }
 
-    fn text(&self) -> Cow<'de, str> {
+    fn text(&self) -> Cow<'doc, str> {
         match self.source {
             Source::Node(node) | Source::Content(node) => {
                 node.child_text().unwrap_or(Cow::Borrowed(""))
@@ -625,18 +627,19 @@ where
     }
 }
 
-struct SeqAccess<'de, 'temp, I, O>
+struct SeqAccess<'doc, 'input, 'temp, I, O>
 where
-    I: Iterator<Item = Node<'de, 'de>>,
+    I: Iterator<Item = Node<'doc, 'input>>,
+    'input: 'doc,
 {
     source: I,
     temp: &'temp mut Temp,
     options: PhantomData<O>,
 }
 
-impl<'de, I, O> de::SeqAccess<'de> for SeqAccess<'de, '_, I, O>
+impl<'de, 'input, I, O> de::SeqAccess<'de> for SeqAccess<'de, 'input, '_, I, O>
 where
-    I: Iterator<Item = Node<'de, 'de>>,
+    I: Iterator<Item = Node<'de, 'input>>,
     O: Options,
 {
     type Error = Box<Error>;
@@ -661,9 +664,10 @@ where
     }
 }
 
-struct MapAccess<'de, 'input: 'de, 'temp, I, O>
+struct MapAccess<'doc, 'input, 'temp, I, O>
 where
-    I: Iterator<Item = Source<'de, 'input>>,
+    I: Iterator<Item = Source<'doc, 'input>>,
+    'input: 'doc,
 {
     source: Peekable<I>,
     temp: &'temp mut Temp,
@@ -718,9 +722,10 @@ where
     }
 }
 
-struct EnumAccess<'de, 'input: 'de, 'temp, I, O>
+struct EnumAccess<'doc, 'input, 'temp, I, O>
 where
-    I: Iterator<Item = Source<'de, 'input>>,
+    I: Iterator<Item = Source<'doc, 'input>>,
+    'input: 'doc,
 {
     source: I,
     variants: &'static [&'static str],
