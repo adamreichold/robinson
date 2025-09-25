@@ -3,8 +3,7 @@ use std::slice::Iter;
 
 use crate::{
     Document, Name, NameData,
-    nodes::Node,
-    strings::{StringData, packed_string_data_ref},
+    nodes::{Node, NodeId},
 };
 
 impl<'doc, 'input> Node<'doc, 'input> {
@@ -61,18 +60,20 @@ impl<'doc, 'input> Attribute<'doc, 'input> {
     }
 
     pub fn value(self) -> &'doc str {
-        packed_string_data_ref!(self.data, value)
+        self.doc.strings.get(self.data.value)
     }
 }
 
 #[repr(Rust, packed)]
 pub(crate) struct AttributeData<'input> {
     pub(crate) name: NameData<'input>,
-    pub(crate) value: StringData<'input>,
+    pub(crate) value: NodeId,
 }
 
-const _SIZE_OF_ATTRIBUTE_DATA: () =
-    assert!(size_of::<AttributeData<'static>>() == size_of::<u16>() + (2 + 2) * size_of::<usize>());
+const _SIZE_OF_ATTRIBUTE_DATA: () = assert!(
+    size_of::<AttributeData<'static>>()
+        == size_of::<u16>() + 2 * size_of::<usize>() + size_of::<u32>()
+);
 
 #[derive(Clone)]
 pub struct Attributes<'doc, 'input> {

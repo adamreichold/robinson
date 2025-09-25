@@ -9,7 +9,6 @@ use std::slice::Iter;
 use crate::{
     Document, Name, NameData,
     error::{ErrorKind, Result},
-    strings::StringData,
 };
 
 impl<'input> Document<'input> {
@@ -99,10 +98,6 @@ impl<'doc, 'input> Node<'doc, 'input> {
 
     pub fn is_text(&self) -> bool {
         self.data.text.is_some()
-    }
-
-    pub(crate) fn text_data(self) -> Option<&'doc StringData<'input>> {
-        self.data.text.map(|text| &self.doc.texts[text.get()])
     }
 
     fn other(self, id: NodeId) -> Self {
@@ -241,7 +236,7 @@ impl<'doc, 'input> Node<'doc, 'input> {
     }
 
     pub fn text(self) -> Option<&'doc str> {
-        self.text_data().map(AsRef::as_ref)
+        self.data.text.map(|text| self.doc.strings.get(text))
     }
 
     pub fn child_texts(self) -> impl Iterator<Item = &'doc str> + Clone {

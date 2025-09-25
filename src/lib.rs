@@ -21,7 +21,7 @@ use std::num::NonZeroUsize;
 use attributes::AttributeData;
 use namespaces::{Namespace, Namespaces, NamespacesBuilder};
 use nodes::{ElementData, NodeData};
-use strings::StringData;
+use strings::{Strings, StringsBuilder};
 
 pub use attributes::{Attribute, Attributes};
 pub use error::{Error, ErrorKind};
@@ -30,9 +30,9 @@ pub use nodes::{Children, Descendants, Node, NodeId};
 pub struct Document<'input> {
     nodes: Box<[NodeData]>,
     elements: Box<[ElementData<'input>]>,
-    texts: Box<[StringData<'input>]>,
     attributes: Box<[AttributeData<'input>]>,
-    namespaces: Namespaces<'input>,
+    strings: Strings<'input>,
+    namespaces: Namespaces,
 }
 
 const fn _is_send_and_sync<T>()
@@ -52,8 +52,8 @@ impl Document<'_> {
 struct DocumentBuilder<'input> {
     nodes: Vec<NodeData>,
     elements: Vec<ElementData<'input>>,
-    texts: Vec<StringData<'input>>,
     attributes: Vec<AttributeData<'input>>,
+    strings: StringsBuilder<'input>,
     namespaces: NamespacesBuilder<'input>,
 }
 
@@ -62,8 +62,8 @@ impl<'input> DocumentBuilder<'input> {
         Document {
             nodes: self.nodes.into_boxed_slice(),
             elements: self.elements.into_boxed_slice(),
-            texts: self.texts.into_boxed_slice(),
             attributes: self.attributes.into_boxed_slice(),
+            strings: self.strings.build(),
             namespaces: self.namespaces.build(),
         }
     }
@@ -106,7 +106,7 @@ impl<'input> NameData<'input> {
     fn get<'doc>(self, doc: &'doc Document) -> Name<'doc, 'input> {
         let namespace = self
             .namespace
-            .map(|namespace| doc.namespaces.get(namespace));
+            .map(|namespace| doc.namespaces.get(namespace, &doc.strings));
 
         Name {
             namespace,
