@@ -1,4 +1,4 @@
-use std::mem::replace;
+use std::mem::{replace, take};
 use std::ops::Range;
 
 use memchr::{memchr, memchr_iter, memchr2, memchr3};
@@ -345,7 +345,7 @@ impl<'input> Parser<'input> {
                             let mut value = self.find_entity(name)?;
 
                             if !buf.is_empty() {
-                                let buf = replace(&mut buf, String::with_capacity(text.len()));
+                                let buf = take(&mut buf);
 
                                 self.append_text_node(StringData::owned(buf.into_boxed_str()))?;
                             }
