@@ -1,18 +1,20 @@
+use std::cmp::Ordering;
 use std::num::NonZeroU16;
 use std::ops::Range;
 
 use crate::{
     error::{ErrorKind, Result},
-    strings::StringData,
+    nodes::NodeId,
+    strings::{Strings, StringsBuilder},
 };
 
-pub(crate) struct Namespaces<'input> {
-    uris: Box<[StringData<'input>]>,
+pub(crate) struct Namespaces {
+    uris: Box<[NodeId]>,
 }
 
-impl Namespaces<'_> {
-    pub(crate) fn get(&self, namespace: Namespace) -> &str {
-        self.uris[namespace.get()].as_ref()
+impl Namespaces {
+    pub(crate) fn get<'doc>(&self, namespace: Namespace, strings: &'doc Strings) -> &'doc str {
+        strings.get(self.uris[namespace.get()])
     }
 }
 
@@ -24,7 +26,7 @@ pub(crate) struct NamespacesBuilder<'input> {
 }
 
 impl<'input> NamespacesBuilder<'input> {
-    pub(crate) fn build(self) -> Namespaces<'input> {
+    pub(crate) fn build(self) -> Namespaces {
         Namespaces {
             uris: self.data.into_iter().map(|data| data.uri).collect(),
         }
@@ -52,7 +54,11 @@ impl<'input> NamespacesBuilder<'input> {
         self.parsed.len() as u32
     }
 
-    pub(crate) fn push(&mut self, data: NamespaceData<'input>) -> Result<Namespace> {
+    pub(crate) fn push(
+        &mut self,
+        data: NamespaceData<'input>,
+        strings: &StringsBuilder,
+    ) -> Result<bool> {
         debug_assert_ne!(data.name, Some(""));
 
         if self.parsed.len() > u32::MAX as usize {
@@ -61,23 +67,23 @@ impl<'input> NamespacesBuilder<'input> {
 
         let idx = self
             .sorted
-            .binary_search_by(|namespace| self.data[namespace.get()].cmp(&data));
+            .binary_search_by(|namespace| self.data[namespace.get()].cmp(&data, strings));
 
-        let namespace = match idx {
-            Ok(idx) => self.sorted[idx],
+        let (namespace, inserted) = match idx {
+            Ok(idx) => (self.sorted[idx], false),
             Err(idx) => {
                 let namespace = Namespace::new(self.data.len())?;
 
                 self.data.push(data);
                 self.sorted.insert(idx, namespace);
 
-                namespace
+                (namespace, true)
             }
         };
 
         self.parsed.push(namespace);
 
-        Ok(namespace)
+        Ok(inserted)
     }
 
     pub(crate) fn push_ref(&mut self, range: &Range<u32>, idx: u32) -> Result {
@@ -119,11 +125,28 @@ impl Namespace {
     }
 }
 
-#[derive(PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) struct NamespaceData<'input> {
     pub(crate) name: Option<&'input str>,
-    pub(crate) uri: StringData<'input>,
+    pub(crate) uri: NodeId,
+}
+
+impl NamespaceData<'_> {
+    fn cmp(&self, other: &Self, strings: &StringsBuilder) -> Ordering {
+        match self.name.cmp(&other.name) {
+            Ordering::Equal => (),
+            ordering => return ordering,
+        }
+
+        if self.uri == other.uri {
+            return Ordering::Equal;
+        }
+
+        let uri = strings.get(self.uri);
+        let other_uri = strings.get(other.uri);
+
+        uri.cmp(other_uri)
+    }
 }
 
 const _SIZE_OF_NAMESPACE_DATA: () =
-    assert!(size_of::<NamespaceData<'static>>() == (2 + 2) * size_of::<usize>());
+    assert!(size_of::<NamespaceData<'static>>() == (2 + 1) * size_of::<usize>());

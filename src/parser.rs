@@ -1,4 +1,4 @@
-use std::mem::{replace, take};
+use std::mem::replace;
 use std::ops::Range;
 
 use memchr::{memchr, memchr_iter, memchr2, memchr3};
@@ -9,7 +9,7 @@ use crate::{
     error::{ErrorKind, Result},
     namespaces::NamespaceData,
     nodes::{ElementData, NodeData, NodeId},
-    strings::StringData,
+    strings::{StringBuf, StringsBuilder},
     tokenizer::{Reference, Tokenizer},
 };
 
@@ -56,7 +56,7 @@ struct CurrElement<'input> {
 struct CurrAttribute<'input> {
     prefix: Option<&'input str>,
     local: &'input str,
-    value: StringData<'input>,
+    value: NodeId,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -73,8 +73,8 @@ impl<'input> Parser<'input> {
         let mut doc = DocumentBuilder {
             nodes: Vec::with_capacity(nodes),
             elements: Vec::with_capacity(nodes / 2),
-            texts: Vec::with_capacity(nodes / 2),
             attributes: Vec::with_capacity(attributes),
+            strings: StringsBuilder::new(text, nodes / 2)?,
             namespaces: Default::default(),
         };
 
@@ -87,10 +87,13 @@ impl<'input> Parser<'input> {
             last_child: None,
         });
 
-        doc.namespaces.push(NamespaceData {
-            name: Some("xml"),
-            uri: StringData::borrowed("http://www.w3.org/XML/1998/namespace"),
-        })?;
+        doc.namespaces.push(
+            NamespaceData {
+                name: Some("xml"),
+                uri: doc.strings.owned("http://www.w3.org/XML/1998/namespace")?,
+            },
+            &doc.strings,
+        )?;
 
         let namespaces_offset = doc.namespaces.len();
 
@@ -130,15 +133,29 @@ impl<'input> Parser<'input> {
         let value = self.normalize_attribute_value(tokenizer, value)?;
 
         if prefix == Some("xmlns") {
-            self.doc.namespaces.push(NamespaceData {
-                name: Some(local),
-                uri: value,
-            })?;
+            let inserted = self.doc.namespaces.push(
+                NamespaceData {
+                    name: Some(local),
+                    uri: value,
+                },
+                &self.doc.strings,
+            )?;
+
+            if !inserted {
+                self.doc.strings.pop(value);
+            }
         } else if prefix.is_none() && local == "xmlns" {
-            self.doc.namespaces.push(NamespaceData {
-                name: None,
-                uri: value,
-            })?;
+            let inserted = self.doc.namespaces.push(
+                NamespaceData {
+                    name: None,
+                    uri: value,
+                },
+                &self.doc.strings,
+            )?;
+
+            if !inserted {
+                self.doc.strings.pop(value);
+            }
         } else {
             self.attributes.push(CurrAttribute {
                 prefix,
@@ -263,12 +280,8 @@ impl<'input> Parser<'input> {
         self.append_node(Some(id), None)
     }
 
-    fn append_text_node(&mut self, text: StringData<'input>) -> Result<()> {
-        let id = NodeId::new(self.doc.texts.len())?;
-
-        self.doc.texts.push(text);
-
-        let id = self.append_node(None, Some(id))?;
+    fn append_text_node(&mut self, text: NodeId) -> Result<()> {
+        let id = self.append_node(None, Some(text))?;
 
         self.subtree.push(id);
 
@@ -283,7 +296,9 @@ impl<'input> Parser<'input> {
         let pos = memchr2(b'&', b'\r', text.as_bytes());
 
         if pos.is_none() {
-            self.append_text_node(StringData::borrowed(text))?;
+            let text = self.doc.strings.borrowed(text)?;
+
+            self.append_text_node(text)?;
             return Ok(());
         }
 
@@ -297,7 +312,9 @@ impl<'input> Parser<'input> {
         mut text: &'input str,
         mut pos: Option<usize>,
     ) -> Result {
-        let mut buf = String::with_capacity(text.len());
+        let mut strings = self.doc.strings.take();
+        let mut buf = StringBuf::new(&mut strings, text.len());
+
         let mut was_cr = false;
 
         while let Some(pos1) = pos {
@@ -345,10 +362,12 @@ impl<'input> Parser<'input> {
                             let mut value = self.find_entity(name)?;
 
                             if !buf.is_empty() {
-                                let buf = take(&mut buf);
+                                let text = buf.finish()?;
 
-                                self.append_text_node(StringData::owned(buf.into_boxed_str()))?;
+                                self.append_text_node(text)?;
                             }
+
+                            self.doc.strings = strings;
 
                             self.open_entity()?;
                             let element = self.element.take();
@@ -358,6 +377,9 @@ impl<'input> Parser<'input> {
 
                             self.element = element;
                             self.close_entity();
+
+                            strings = self.doc.strings.take();
+                            buf = StringBuf::new(&mut strings, 0);
                         }
                     }
                 }
@@ -369,8 +391,12 @@ impl<'input> Parser<'input> {
         buf.push_str(text);
 
         if !buf.is_empty() {
-            self.append_text_node(StringData::owned(buf.into_boxed_str()))?;
+            let text = buf.finish()?;
+
+            self.append_text_node(text)?;
         }
+
+        self.doc.strings = strings;
 
         Ok(())
     }
@@ -379,7 +405,9 @@ impl<'input> Parser<'input> {
         let pos = memchr(b'\r', cdata.as_bytes());
 
         if pos.is_none() {
-            self.append_text_node(StringData::borrowed(cdata))?;
+            let text = self.doc.strings.borrowed(cdata)?;
+
+            self.append_text_node(text)?;
             return Ok(());
         }
 
@@ -388,7 +416,7 @@ impl<'input> Parser<'input> {
 
     #[inline(never)]
     fn append_cdata_impl(&mut self, mut cdata: &'input str, mut pos: Option<usize>) -> Result {
-        let mut buf = String::with_capacity(cdata.len());
+        let mut buf = StringBuf::new(&mut self.doc.strings, cdata.len());
 
         while let Some(pos1) = pos {
             let (line, rest) = cdata.split_at(pos1);
@@ -406,7 +434,9 @@ impl<'input> Parser<'input> {
 
         buf.push_str(cdata);
 
-        self.append_text_node(StringData::owned(buf.into_boxed_str()))?;
+        let text = buf.finish()?;
+
+        self.append_text_node(text)?;
         Ok(())
     }
 
@@ -414,19 +444,23 @@ impl<'input> Parser<'input> {
         &mut self,
         tokenizer: &mut Tokenizer<'input>,
         value: &'input str,
-    ) -> Result<StringData<'input>> {
+    ) -> Result<NodeId> {
         let pos_entity = memchr(b'&', value.as_bytes());
         let pos_space = memchr3(b'\t', b'\r', b'\n', value.as_bytes());
 
         if pos_entity.is_none() && pos_space.is_none() {
-            return Ok(StringData::borrowed(value));
+            return self.doc.strings.borrowed(value);
         }
 
-        let mut buf = String::with_capacity(value.len());
+        let mut strings = self.doc.strings.take();
+        let mut buf = StringBuf::new(&mut strings, value.len());
 
         self.normalize_attribute_value_impl(tokenizer, value, pos_entity, pos_space, &mut buf)?;
 
-        Ok(StringData::owned(buf.into_boxed_str()))
+        let value = buf.finish()?;
+        self.doc.strings = strings;
+
+        Ok(value)
     }
 
     #[inline(never)]
@@ -436,7 +470,7 @@ impl<'input> Parser<'input> {
         mut value: &'input str,
         mut pos_entity: Option<usize>,
         mut pos_space: Option<usize>,
-        buf: &mut String,
+        buf: &mut StringBuf<'_, 'input>,
     ) -> Result {
         while let Some(mut pos) = pos_entity {
             while let Some(pos1) = pos_space {
