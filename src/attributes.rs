@@ -35,7 +35,10 @@ impl<'doc, 'input> Node<'doc, 'input> {
     /// let baz = doc.root_element().attribute("baz");
     ///
     /// assert_eq!(baz, Some("qux"));
-    pub fn attribute(self, name: &str) -> Option<&'doc str> {
+    pub fn attribute<N>(self, name: N) -> Option<&'doc str>
+    where
+        Name<'doc, 'input>: PartialEq<N>,
+    {
         self.attributes()
             .find(|attribute| attribute.name() == name)
             .map(|attribute| attribute.value())
