@@ -7,7 +7,7 @@ use crate::{
     Document, DocumentBuilder, NameData,
     attributes::AttributeData,
     error::{ErrorKind, Result},
-    namespaces::NamespaceData,
+    namespaces::{Namespace, NamespaceData},
     nodes::{ElementData, NodeData, NodeId},
     strings::StringData,
     tokenizer::{Reference, Tokenizer},
@@ -556,7 +556,7 @@ impl<'input> Parser<'input> {
             let namespace = if attribute.prefix.is_none() {
                 None
             } else if attribute.prefix == Some("xml") {
-                Some(Default::default())
+                Some(Namespace::XML)
             } else {
                 self.doc.namespaces.find(namespaces, attribute.prefix)?
             };

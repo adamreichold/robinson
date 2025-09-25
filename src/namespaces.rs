@@ -106,7 +106,9 @@ impl<'input> NamespacesBuilder<'input> {
 pub(crate) struct Namespace(NonZeroU16);
 
 impl Namespace {
-    pub(crate) fn new(id: usize) -> Result<Self> {
+    pub(crate) const XML: Self = Self(NonZeroU16::new(1).unwrap());
+
+    fn new(id: usize) -> Result<Self> {
         if id >= u16::MAX as usize {
             return ErrorKind::TooManyNamespaces.into();
         }
@@ -114,14 +116,8 @@ impl Namespace {
         Ok(Self(NonZeroU16::new(id as u16 + 1).unwrap()))
     }
 
-    pub(crate) fn get(self) -> usize {
+    fn get(self) -> usize {
         self.0.get() as usize - 1
-    }
-}
-
-impl Default for Namespace {
-    fn default() -> Self {
-        Self::new(0).unwrap()
     }
 }
 
