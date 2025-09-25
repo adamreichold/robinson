@@ -357,7 +357,7 @@ impl<'input> Tokenizer<'input> {
         loop {
             match self.text.as_bytes().get(pos) {
                 Some(byte) if *byte < 128 => {
-                    if CHECK_XML_NAME & (1 << byte) != 0 {
+                    if check_xml_name_ascii(*byte) {
                         pos += 1;
                     } else {
                         break;
@@ -402,7 +402,7 @@ impl<'input> Tokenizer<'input> {
                 }
 
                 Some(byte) if *byte < 128 => {
-                    if CHECK_XML_NAME & (1 << byte) != 0 {
+                    if check_xml_name_ascii(*byte) {
                         pos += 1;
                     } else {
                         break;
@@ -534,20 +534,27 @@ impl<'input> Tokenizer<'input> {
     }
 }
 
-/*
-import string
+fn check_xml_name_ascii(byte: u8) -> bool {
+    /*
+    import string
 
-xml_name = set(string.ascii_letters + string.digits + "_-.:")
+    xml_name = set(string.ascii_letters + string.digits + "_-.:")
 
-mask = 0
+    mask = [0, 0]
 
-for idx in range(128):
-    if chr(idx) in xml_name:
-        mask |= 1 << idx
+    for idx in range(128):
+        if chr(idx) in xml_name:
+            mask[idx // 64] |= 1 << (idx % 64)
 
-print(f"const CHECK_XML_NAME: u128 = 0b{mask:0128b};")
-*/
-const CHECK_XML_NAME: u128 = 0b00000111111111111111111111111110100001111111111111111111111111100000011111111111011000000000000000000000000000000000000000000000;
+    print(f"const MASK: [u64; 2] = [0b{mask[0]:064b}, 0b{mask[1]:064b}];")
+    */
+    const MASK: [u64; 2] = [
+        0b0000011111111111011000000000000000000000000000000000000000000000,
+        0b0000011111111111111111111111111010000111111111111111111111111110,
+    ];
+
+    MASK[(byte / 64) as usize] & (1 << (byte % 64)) != 0
+}
 
 #[cold]
 #[inline(never)]
