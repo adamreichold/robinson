@@ -52,6 +52,7 @@ test!(text);
 test!(text_entity_interleaved);
 test!(unclosed_root_element);
 test!(unknown_namespace_empty);
+test!(xml_namespace);
 // >>>>>>> discovered_tests
 
 #[test]
