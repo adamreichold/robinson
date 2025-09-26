@@ -4,9 +4,32 @@ Ok(
             children: [
                 Node {
                     name: "root",
-                    attributes: {
-                        "{http://www.w3.org/XML/1998/namespace}space": "preserve",
-                    },
+                    children: [
+                        Node {
+                            text: "\n    ",
+                        },
+                        Node {
+                            name: "foo",
+                            attributes: {
+                                "{http://www.w3.org/XML/1998/namespace}space": "preserve",
+                            },
+                        },
+                        Node {
+                            text: "\n    ",
+                        },
+                        Node {
+                            name: "{http://www.w3.org/XML/1998/namespace}bar",
+                        },
+                        Node {
+                            text: "\n    ",
+                        },
+                        Node {
+                            name: "{http://www.w3.org/XML/1998/namespace}baz",
+                        },
+                        Node {
+                            text: "\n",
+                        },
+                    ],
                 },
             ],
         },

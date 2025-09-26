@@ -7,7 +7,7 @@ use crate::{
     Document, DocumentBuilder, NameData,
     attributes::AttributeData,
     error::{ErrorKind, Result},
-    namespaces::{Namespace, NamespaceData},
+    namespaces::NamespaceData,
     nodes::{ElementData, NodeData, NodeId},
     strings::StringData,
     tokenizer::{Reference, Tokenizer},
@@ -20,7 +20,7 @@ impl<'input> Document<'input> {
         let mut tokenizer = Tokenizer::new(text);
         tokenizer.parse(&mut parser)?;
 
-        if !parser.parent_namespaces.is_empty() {
+        if parser.parent_namespaces.len() > 1 {
             return ErrorKind::UnclosedRootElement.into();
         }
 
@@ -94,13 +94,15 @@ impl<'input> Parser<'input> {
 
         let namespaces_offset = doc.namespaces.len();
 
+        let default_namespaces = 0..namespaces_offset;
+
         Ok(Self {
             doc,
             element: None,
             parent: NodeId::new(0).unwrap(),
             subtree: Vec::new(),
             attributes: Vec::new(),
-            parent_namespaces: Vec::new(),
+            parent_namespaces: vec![default_namespaces],
             namespaces_offset,
             entities: Vec::new(),
             entity_depth: 0,
@@ -128,12 +130,10 @@ impl<'input> Parser<'input> {
         let value = self.normalize_attribute_value(tokenizer, value)?;
 
         if prefix == Some("xmlns") {
-            if value.as_ref() != "http://www.w3.org/XML/1998/namespace" {
-                self.doc.namespaces.push(NamespaceData {
-                    name: Some(local),
-                    uri: value,
-                })?;
-            }
+            self.doc.namespaces.push(NamespaceData {
+                name: Some(local),
+                uri: value,
+            })?;
         } else if prefix.is_none() && local == "xmlns" {
             self.doc.namespaces.push(NamespaceData {
                 name: None,
@@ -555,8 +555,6 @@ impl<'input> Parser<'input> {
         for attribute in self.attributes.drain(..) {
             let namespace = if attribute.prefix.is_none() {
                 None
-            } else if attribute.prefix == Some("xml") {
-                Some(Namespace::XML)
             } else {
                 self.doc.namespaces.find(namespaces, attribute.prefix)?
             };
