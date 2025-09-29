@@ -137,8 +137,8 @@ impl<'input> Tokenizer<'input> {
 
         self.parse_miscellaneous()?;
 
-        if self.try_literal("<") {
-            self.parse_element(parser)?;
+        if self.try_literal("<") && self.parse_element(parser)? {
+            self.parse_content(parser)?;
         }
 
         self.parse_miscellaneous()?;
@@ -296,7 +296,9 @@ impl<'input> Tokenizer<'input> {
             } else if self.try_literal("</") {
                 return self.parse_close_element(parser);
             } else if self.try_literal("<") {
-                self.parse_element(parser)?;
+                if self.parse_element(parser)? {
+                    self.parse_content(parser)?;
+                }
             } else if self.text.is_empty() {
                 return Ok(());
             } else {
@@ -445,22 +447,22 @@ impl<'input> Tokenizer<'input> {
         Ok(quoted)
     }
 
-    fn parse_element(&mut self, parser: &mut Parser<'input>) -> Result {
+    fn parse_element(&mut self, parser: &mut Parser<'input>) -> Result<bool> {
         let (prefix, local) = self.parse_qualname()?;
 
         parser.open_element(prefix, local)?;
 
-        let open = loop {
+        loop {
             let space = self.try_space();
 
             if self.try_literal("/>") {
                 parser.close_empty_element()?;
 
-                break false;
+                return Ok(false);
             } else if self.try_literal(">") {
                 parser.close_open_element()?;
 
-                break true;
+                return Ok(true);
             } else {
                 // An attribute must be preceded by whitespace.
                 if !space {
@@ -471,13 +473,7 @@ impl<'input> Tokenizer<'input> {
 
                 parser.push_attribute(self, prefix, local, value)?;
             }
-        };
-
-        if open {
-            self.parse_content(parser)?;
         }
-
-        Ok(())
     }
 
     fn parse_close_element(&mut self, parser: &mut Parser<'input>) -> Result {
