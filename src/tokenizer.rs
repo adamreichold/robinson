@@ -11,6 +11,7 @@ use crate::{
 pub(crate) struct Tokenizer<'input> {
     text: &'input str,
     init_text: &'input str,
+    element_depth: u16,
     pi: Finder<'static>,
     comment: Finder<'static>,
     cdata: Finder<'static>,
@@ -27,6 +28,7 @@ impl<'input> Tokenizer<'input> {
         Self {
             text,
             init_text: text,
+            element_depth: 0,
             pi: Finder::new(b"?>"),
             comment: Finder::new(b"-->"),
             cdata: Finder::new(b"]]>"),
@@ -137,8 +139,12 @@ impl<'input> Tokenizer<'input> {
 
         self.parse_miscellaneous()?;
 
-        if self.try_literal("<") && self.parse_element(parser)? {
-            self.parse_content(parser)?;
+        if self.try_literal("<") {
+            self.parse_element(parser)?;
+
+            if self.element_depth != 0 {
+                self.parse_content(parser)?;
+            }
         }
 
         self.parse_miscellaneous()?;
@@ -294,11 +300,13 @@ impl<'input> Tokenizer<'input> {
             } else if self.try_literal("<?") {
                 self.parse_pi()?;
             } else if self.try_literal("</") {
-                return self.parse_close_element(parser);
-            } else if self.try_literal("<") {
-                if self.parse_element(parser)? {
-                    self.parse_content(parser)?;
+                self.parse_close_element(parser)?;
+
+                if self.element_depth == 0 {
+                    return Ok(());
                 }
+            } else if self.try_literal("<") {
+                self.parse_element(parser)?;
             } else if self.text.is_empty() {
                 return Ok(());
             } else {
@@ -447,7 +455,7 @@ impl<'input> Tokenizer<'input> {
         Ok(quoted)
     }
 
-    fn parse_element(&mut self, parser: &mut Parser<'input>) -> Result<bool> {
+    fn parse_element(&mut self, parser: &mut Parser<'input>) -> Result {
         let (prefix, local) = self.parse_qualname()?;
 
         parser.open_element(prefix, local)?;
@@ -456,13 +464,14 @@ impl<'input> Tokenizer<'input> {
             let space = self.try_space();
 
             if self.try_literal("/>") {
-                parser.close_empty_element()?;
-
-                return Ok(false);
+                return parser.close_empty_element();
             } else if self.try_literal(">") {
-                parser.close_open_element()?;
+                self.element_depth = match self.element_depth.checked_add(1) {
+                    Some(element_depth) => element_depth,
+                    None => return ErrorKind::TooManyNodes.into(),
+                };
 
-                return Ok(true);
+                return parser.close_open_element();
             } else {
                 // An attribute must be preceded by whitespace.
                 if !space {
@@ -481,6 +490,11 @@ impl<'input> Tokenizer<'input> {
 
         self.try_space();
         self.expect_literal(">")?;
+
+        self.element_depth = match self.element_depth.checked_sub(1) {
+            Some(element_depth) => element_depth,
+            None => return ErrorKind::UnexpectedCloseElement.into(),
+        };
 
         parser.close_element(prefix, local)
     }
