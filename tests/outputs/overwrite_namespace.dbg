@@ -1,0 +1,19 @@
+Ok(
+    Document {
+        root: Node {
+            children: [
+                Node {
+                    name: "{http://bar}root",
+                    children: [
+                        Node {
+                            name: "{http://baz}child",
+                        },
+                        Node {
+                            name: "{http://bar}child",
+                        },
+                    ],
+                },
+            ],
+        },
+    },
+)
