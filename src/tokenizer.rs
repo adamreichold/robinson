@@ -55,16 +55,22 @@ impl<'input> Tokenizer<'input> {
     fn set_pos(&self, mut err: Box<Error>) -> Box<Error> {
         let mut line = 0;
         let mut pos = self.text.as_ptr().addr();
+        let mut found = false;
 
         for init_text in self.init_text.lines() {
             let init_pos = init_text.as_ptr().addr();
 
             if pos <= init_pos + init_text.len() {
                 pos -= init_pos;
+                found = true;
                 break;
             } else {
                 line += 1;
             }
+        }
+
+        if !found {
+            pos = 0;
         }
 
         err.pos = Some((line + 1, pos + 1));
