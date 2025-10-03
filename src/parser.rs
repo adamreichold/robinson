@@ -1,4 +1,3 @@
-use std::mem::replace;
 use std::ops::Range;
 
 use memchr::{memchr, memchr_iter, memchr2, memchr3};
@@ -7,7 +6,6 @@ use crate::{
     Document, DocumentBuilder, NameData,
     attributes::AttributeData,
     error::{ErrorKind, Result},
-    namespaces::NamespaceData,
     nodes::{ElementData, NodeData, NodeId},
     strings::{StringBuf, StringsBuilder},
     tokenizer::{Reference, Tokenizer},
@@ -36,8 +34,6 @@ pub(crate) struct Parser<'input> {
     parent: NodeId,
     subtree: Vec<NodeId>,
     attributes: Vec<CurrAttribute<'input>>,
-    parent_namespaces: Vec<Range<u32>>,
-    namespaces_offset: u32,
     entities: Vec<Entity<'input>>,
     entity_depth: u8,
     entity_breadth: u8,
@@ -83,17 +79,10 @@ impl<'input> Parser<'input> {
             last_child: None,
         });
 
-        doc.namespaces.push(
-            NamespaceData {
-                name: Some("xml"),
-                uri: doc.strings.owned("http://www.w3.org/XML/1998/namespace")?,
-            },
-            &doc.strings,
-        )?;
+        let xml_uri = doc.strings.owned("http://www.w3.org/XML/1998/namespace")?;
 
-        let namespaces_offset = doc.namespaces.len();
-
-        let default_namespaces = 0..namespaces_offset;
+        doc.namespaces
+            .push(&mut doc.strings, 0, Some("xml"), xml_uri)?;
 
         Ok(Self {
             doc,
@@ -101,8 +90,6 @@ impl<'input> Parser<'input> {
             parent: NodeId::new(0).unwrap(),
             subtree: Vec::new(),
             attributes: Vec::new(),
-            parent_namespaces: vec![default_namespaces],
-            namespaces_offset,
             entities: Vec::new(),
             entity_depth: 0,
             entity_breadth: 0,
@@ -129,29 +116,19 @@ impl<'input> Parser<'input> {
         let value = self.normalize_attribute_value(tokenizer, value)?;
 
         if prefix == Some("xmlns") {
-            let inserted = self.doc.namespaces.push(
-                NamespaceData {
-                    name: Some(local),
-                    uri: value,
-                },
-                &self.doc.strings,
+            self.doc.namespaces.push(
+                &mut self.doc.strings,
+                tokenizer.element_depth(),
+                Some(local),
+                value,
             )?;
-
-            if !inserted {
-                self.doc.strings.pop(value);
-            }
         } else if prefix.is_none() && local == "xmlns" {
-            let inserted = self.doc.namespaces.push(
-                NamespaceData {
-                    name: None,
-                    uri: value,
-                },
-                &self.doc.strings,
+            self.doc.namespaces.push(
+                &mut self.doc.strings,
+                tokenizer.element_depth(),
+                None,
+                value,
             )?;
-
-            if !inserted {
-                self.doc.strings.pop(value);
-            }
         } else {
             self.attributes.push(CurrAttribute {
                 prefix,
@@ -163,15 +140,14 @@ impl<'input> Parser<'input> {
         Ok(())
     }
 
-    pub(crate) fn close_empty_element(&mut self) -> Result {
-        let namespaces = self.resolve_namespaces()?;
-        let attributes = self.resolve_attributes(&namespaces)?;
+    pub(crate) fn close_empty_element(&mut self, tokenizer: &Tokenizer<'input>) -> Result {
+        let attributes = self.resolve_attributes()?;
 
         let Some(element) = self.element.take() else {
             return ErrorKind::UnexpectedCloseElement.into();
         };
 
-        let namespace = self.doc.namespaces.find(&namespaces, element.prefix)?;
+        let namespace = self.doc.namespaces.find(element.prefix)?;
 
         let id = self.append_element_node(ElementData {
             name: NameData {
@@ -184,22 +160,23 @@ impl<'input> Parser<'input> {
 
         self.subtree.push(id);
 
+        self.doc.namespaces.pop(tokenizer.element_depth());
+
         Ok(())
     }
 
     pub(crate) fn close_element(
         &mut self,
+        tokenizer: &mut Tokenizer<'input>,
         prefix: Option<&'input str>,
         local: &'input str,
     ) -> Result {
-        let namespaces = self.resolve_namespaces()?;
-
         self.element = None;
 
         let parent = &self.doc.nodes[self.parent.get()];
 
         if let Some(element) = parent.element {
-            let namespace = self.doc.namespaces.find(&namespaces, prefix)?;
+            let namespace = self.doc.namespaces.find(prefix)?;
 
             let name = &self.doc.elements[element.get()].name;
             let name_namespace = name.namespace;
@@ -214,23 +191,23 @@ impl<'input> Parser<'input> {
 
         if let Some(ancestor) = parent.parent {
             self.parent = ancestor;
-            self.parent_namespaces.pop();
         } else {
             return ErrorKind::UnexpectedCloseElement.into();
         }
+
+        self.doc.namespaces.pop(tokenizer.element_depth());
 
         Ok(())
     }
 
     pub(crate) fn close_open_element(&mut self) -> Result {
-        let namespaces = self.resolve_namespaces()?;
-        let attributes = self.resolve_attributes(&namespaces)?;
+        let attributes = self.resolve_attributes()?;
 
         let Some(element) = self.element.take() else {
             return ErrorKind::UnexpectedCloseElement.into();
         };
 
-        let namespace = self.doc.namespaces.find(&namespaces, element.prefix)?;
+        let namespace = self.doc.namespaces.find(element.prefix)?;
 
         let id = self.append_element_node(ElementData {
             name: NameData {
@@ -242,7 +219,6 @@ impl<'input> Parser<'input> {
         })?;
 
         self.parent = id;
-        self.parent_namespaces.push(namespaces);
 
         Ok(())
     }
@@ -553,28 +529,7 @@ impl<'input> Parser<'input> {
         Ok(())
     }
 
-    fn resolve_namespaces(&mut self) -> Result<Range<u32>> {
-        if let Some(parent_namespaces) = self.parent_namespaces.last() {
-            let parent_namespaces = parent_namespaces.clone();
-
-            let self_namespaces = self.namespaces_offset..self.doc.namespaces.len();
-
-            if self_namespaces.is_empty() {
-                return Ok(parent_namespaces);
-            }
-
-            for idx in parent_namespaces {
-                self.doc.namespaces.push_ref(&self_namespaces, idx)?;
-            }
-        }
-
-        let new_len = self.doc.namespaces.len();
-        let old_len = replace(&mut self.namespaces_offset, new_len);
-
-        Ok(old_len..new_len)
-    }
-
-    fn resolve_attributes(&mut self, namespaces: &Range<u32>) -> Result<Range<u32>> {
+    fn resolve_attributes(&mut self) -> Result<Range<u32>> {
         let old_len = self.doc.attributes.len();
         let new_len = old_len + self.attributes.len();
 
@@ -586,7 +541,7 @@ impl<'input> Parser<'input> {
             let namespace = if attribute.prefix.is_none() {
                 None
             } else {
-                self.doc.namespaces.find(namespaces, attribute.prefix)?
+                self.doc.namespaces.find(attribute.prefix)?
             };
 
             self.doc.attributes.push(AttributeData {

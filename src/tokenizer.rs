@@ -35,6 +35,10 @@ impl<'input> Tokenizer<'input> {
         }
     }
 
+    pub(crate) fn element_depth(&self) -> u16 {
+        self.element_depth
+    }
+
     pub(crate) fn with_text<F, T>(&mut self, text: &mut &'input str, f: F) -> Result<T>
     where
         F: FnOnce(&mut Self) -> Result<T>,
@@ -474,7 +478,7 @@ impl<'input> Tokenizer<'input> {
             let space = self.try_space();
 
             if self.try_literal("/>") {
-                return parser.close_empty_element();
+                return parser.close_empty_element(self);
             } else if self.try_literal(">") {
                 self.element_depth = match self.element_depth.checked_add(1) {
                     Some(element_depth) => element_depth,
@@ -506,7 +510,7 @@ impl<'input> Tokenizer<'input> {
             None => return ErrorKind::UnexpectedCloseElement.into(),
         };
 
-        parser.close_element(prefix, local)
+        parser.close_element(self, prefix, local)
     }
 
     fn parse_attribute(&mut self) -> Result<(Option<&'input str>, &'input str, &'input str)> {
