@@ -87,7 +87,7 @@ impl<'input> Parser<'input> {
         Ok(Self {
             doc,
             element: None,
-            parent: NodeId::new(0).unwrap(),
+            parent: NodeId::ROOT,
             subtree: Vec::new(),
             attributes: Vec::new(),
             entities: Vec::new(),

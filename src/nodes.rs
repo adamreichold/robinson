@@ -325,9 +325,9 @@ const _SIZE_OF_ELEMENT_DATA: () = assert!(
 pub struct NodeId(NonZeroU32);
 
 impl NodeId {
-    const ROOT: Self = Self(NonZeroU32::new(1).unwrap());
+    pub(crate) const ROOT: Self = Self(NonZeroU32::new(1).unwrap());
 
-    pub fn new(id: usize) -> Result<Self> {
+    pub(crate) fn new(id: usize) -> Result<Self> {
         if id >= u32::MAX as usize {
             return ErrorKind::TooManyNodes.into();
         }
@@ -335,11 +335,11 @@ impl NodeId {
         Ok(Self(NonZeroU32::new(id as u32 + 1).unwrap()))
     }
 
-    pub fn get(self) -> usize {
+    pub(crate) fn get(self) -> usize {
         self.0.get() as usize - 1
     }
 
-    pub fn next(self) -> Self {
+    pub(crate) fn next(self) -> Self {
         Self(self.0.checked_add(1).unwrap())
     }
 }
