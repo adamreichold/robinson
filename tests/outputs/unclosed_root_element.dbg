@@ -1,6 +1,11 @@
 Err(
     Error {
         kind: UnclosedRootElement,
-        pos: None,
+        pos: Some(
+            (
+                2,
+                1,
+            ),
+        ),
     },
 )

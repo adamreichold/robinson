@@ -150,6 +150,10 @@ impl<'input> Tokenizer<'input> {
 
             if self.element_depth != 0 {
                 self.parse_content(parser)?;
+
+                if self.element_depth != 0 {
+                    return ErrorKind::UnclosedRootElement.into();
+                }
             }
         }
 

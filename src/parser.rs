@@ -20,10 +20,6 @@ impl<'input> Document<'input> {
         let mut tokenizer = Tokenizer::new(text);
         tokenizer.parse(&mut parser)?;
 
-        if parser.parent_namespaces.len() > 1 {
-            return ErrorKind::UnclosedRootElement.into();
-        }
-
         let doc = parser.doc.build();
 
         if !doc.root().children().any(|child| child.is_element()) {
