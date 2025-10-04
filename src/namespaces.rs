@@ -111,6 +111,7 @@ impl Namespace {
     }
 }
 
+#[derive(Clone, Copy)]
 struct NamespaceData<'input> {
     element_depth: u16,
     prefix: Option<&'input str>,

@@ -68,11 +68,11 @@ impl<'input> StringsBuilder<'input> {
     }
 
     pub(crate) fn pop(&mut self, id: NodeId) {
-        assert_eq!(id.get() + 1, self.vals.len());
+        debug_assert_eq!(id.get() + 1, self.vals.len());
 
-        let val = self.vals.pop().unwrap();
-
-        if val.1 & TAG != 0 {
+        if let Some(val) = self.vals.pop()
+            && val.1 & TAG != 0
+        {
             let pos = val.0 as usize;
 
             self.buf.truncate(pos);

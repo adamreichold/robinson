@@ -6,7 +6,7 @@
 
 For when you go to a lonely island and survival depends on parsing XML.
 
-This is a rewrite of [`roxmltree`](https://github.com/RazrFalcon/roxmltree) which makes a few API changes and drops some verification steps to enable speed-ups between 20 and 50 percent.
+This is a rewrite of [`roxmltree`](https://github.com/RazrFalcon/roxmltree) which makes a few API changes and drops some verification steps to enable speed-ups between 40 and 90 percent.
 
 ## License
 

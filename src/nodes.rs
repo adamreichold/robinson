@@ -339,7 +339,7 @@ impl NodeId {
         self.0.get() as usize - 1
     }
 
-    pub(crate) fn next(self) -> Self {
+    fn next(self) -> Self {
         Self(self.0.checked_add(1).unwrap())
     }
 }
@@ -391,23 +391,25 @@ pub struct Descendants<'doc, 'input> {
     doc: &'doc Document<'input>,
 }
 
+impl<'doc, 'input> Descendants<'doc, 'input> {
+    fn get(&self, (idx, data): (usize, &'doc NodeData)) -> Node<'doc, 'input> {
+        Node {
+            id: NodeId::new(self.from + idx).unwrap(),
+            data,
+            doc: self.doc,
+        }
+    }
+}
+
 impl<'doc, 'input> Iterator for Descendants<'doc, 'input> {
     type Item = Node<'doc, 'input>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        self.nodes.next().map(|(idx, data)| Node {
-            id: NodeId::new(self.from + idx).unwrap(),
-            data,
-            doc: self.doc,
-        })
+        self.nodes.next().map(|node| self.get(node))
     }
 
     fn nth(&mut self, n: usize) -> Option<Self::Item> {
-        self.nodes.nth(n).map(|(idx, data)| Node {
-            id: NodeId::new(self.from + idx).unwrap(),
-            data,
-            doc: self.doc,
-        })
+        self.nodes.nth(n).map(|node| self.get(node))
     }
 
     fn size_hint(&self) -> (usize, Option<usize>) {
@@ -419,11 +421,7 @@ impl ExactSizeIterator for Descendants<'_, '_> {}
 
 impl DoubleEndedIterator for Descendants<'_, '_> {
     fn next_back(&mut self) -> Option<Self::Item> {
-        self.nodes.next_back().map(|(idx, data)| Node {
-            id: NodeId::new(self.from + idx).unwrap(),
-            data,
-            doc: self.doc,
-        })
+        self.nodes.next_back().map(|node| self.get(node))
     }
 }
 
