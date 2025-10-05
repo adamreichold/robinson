@@ -4,6 +4,7 @@
     missing_copy_implementations,
     unreachable_pub
 )]
+#![feature(portable_simd)]
 
 mod attributes;
 mod error;
