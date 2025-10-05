@@ -380,21 +380,9 @@ impl<'input> Tokenizer<'input> {
 
         loop {
             match self.text.as_bytes().get(pos) {
-                Some(byte) if *byte < 128 => {
-                    if check_xml_name_ascii(*byte) {
-                        pos += 1;
-                    } else {
-                        break;
-                    }
-                }
-
-                Some(_byte) => {
-                    if check_xml_name(self.text, &mut pos) {
-                        break;
-                    }
-                }
-
-                None => break,
+                Some(b'=' | b'/' | b'>' | b' ' | b'\t' | b'\r' | b'\n') => break,
+                Some(_) => pos += 1,
+                None => return ErrorKind::InvalidName.into(),
             }
         }
 
@@ -409,45 +397,40 @@ impl<'input> Tokenizer<'input> {
     }
 
     fn parse_qualname(&mut self) -> Result<(Option<&'input str>, &'input str)> {
-        let mut prefix = None;
-
         let mut pos = 0;
+        let mut prefix_pos = None;
 
         loop {
             match self.text.as_bytes().get(pos) {
+                Some(b'=' | b'/' | b'>' | b' ' | b'\t' | b'\r' | b'\n') => break,
                 Some(b':') => {
-                    if prefix.is_some() {
+                    if prefix_pos.is_some() {
                         return ErrorKind::InvalidName.into();
                     }
 
-                    prefix = Some(pos);
+                    prefix_pos = Some(pos);
 
                     pos += 1;
                 }
-
-                Some(byte) if *byte < 128 => {
-                    if check_xml_name_ascii(*byte) {
-                        pos += 1;
-                    } else {
-                        break;
-                    }
-                }
-
-                Some(_byte) => {
-                    if check_xml_name(self.text, &mut pos) {
-                        break;
-                    }
-                }
-
-                None => break,
+                Some(_) => pos += 1,
+                None => return ErrorKind::InvalidName.into(),
             }
         }
 
         let (qualname, rest) = self.text.split_at(pos);
         self.text = rest;
 
-        let (prefix, local) = match prefix {
-            Some(pos) => (Some(&qualname[..pos]), &qualname[pos + 1..]),
+        let (prefix, local) = match prefix_pos {
+            Some(prefix_pos) => {
+                let prefix = &qualname[..prefix_pos];
+                let local = &qualname[prefix_pos + 1..];
+
+                if prefix.is_empty() {
+                    return ErrorKind::InvalidName.into();
+                }
+
+                (Some(prefix), local)
+            }
             None => (None, qualname),
         };
 
@@ -555,57 +538,5 @@ impl<'input> Tokenizer<'input> {
         };
 
         Ok(Reference::Char(char_))
-    }
-}
-
-fn check_xml_name_ascii(byte: u8) -> bool {
-    /*
-    import string
-
-    xml_name = set(string.ascii_letters + string.digits + "_-.:")
-
-    mask = [0, 0]
-
-    for idx in range(128):
-        if chr(idx) in xml_name:
-            mask[idx // 64] |= 1 << (idx % 64)
-
-    print(f"const MASK: [u64; 2] = [0b{mask[0]:064b}, 0b{mask[1]:064b}];")
-    */
-    const MASK: [u64; 2] = [
-        0b0000011111111111011000000000000000000000000000000000000000000000,
-        0b0000011111111111111111111111111010000111111111111111111111111110,
-    ];
-
-    MASK[(byte / 64) as usize] & (1 << (byte % 64)) != 0
-}
-
-#[cold]
-#[inline(never)]
-fn check_xml_name(text: &str, pos: &mut usize) -> bool {
-    let char_ = text[*pos..].chars().next().unwrap();
-
-    if matches!(
-        char_ as u32,
-        0x0000B7
-        | 0x0000C0..=0x0000D6
-        | 0x0000D8..=0x0000F6
-        | 0x0000F8..=0x0002FF
-        | 0x000300..=0x00036F
-        | 0x000370..=0x00037D
-        | 0x00037F..=0x001FFF
-        | 0x00200C..=0x00200D
-        | 0x00203F..=0x002040
-        | 0x002070..=0x00218F
-        | 0x002C00..=0x002FEF
-        | 0x003001..=0x00D7FF
-        | 0x00F900..=0x00FDCF
-        | 0x00FDF0..=0x00FFFD
-        | 0x010000..=0x0EFFFF
-    ) {
-        *pos += char_.len_utf8();
-        false
-    } else {
-        true
     }
 }
