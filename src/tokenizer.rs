@@ -378,12 +378,19 @@ impl<'input> Tokenizer<'input> {
     fn parse_name(&mut self) -> Result<&'input str> {
         let mut pos = 0;
 
-        loop {
-            match self.text.as_bytes().get(pos) {
-                Some(b'=' | b'/' | b'>' | b' ' | b'\t' | b'\r' | b'\n') => break,
-                Some(_) => pos += 1,
-                None => return ErrorKind::InvalidName.into(),
-            }
+        #[cfg(not(target_arch = "x86_64"))]
+        parse_name_impl(self.text, &mut pos)?;
+
+        #[allow(unsafe_code)]
+        #[cfg(all(target_arch = "x86_64", not(target_feature = "avx2")))]
+        unsafe {
+            parse_name_impl_sse2(self.text, &mut pos)?;
+        }
+
+        #[allow(unsafe_code)]
+        #[cfg(all(target_arch = "x86_64", target_feature = "avx2"))]
+        unsafe {
+            parse_name_impl_avx2(self.text, &mut pos)?;
         }
 
         let (name, rest) = self.text.split_at(pos);
@@ -511,4 +518,127 @@ impl<'input> Tokenizer<'input> {
 
         Ok(Reference::Char(char_))
     }
+}
+
+#[cfg_attr(target_arch = "x86_64", cold)]
+#[cfg_attr(target_arch = "x86_64", inline(never))]
+#[cfg_attr(not(target_arch = "x86_64"), inline(always))]
+fn parse_name_impl(text: &str, pos: &mut usize) -> Result {
+    loop {
+        match text.as_bytes().get(*pos) {
+            Some(b'=' | b'/' | b'>' | b' ' | b'\t' | b'\r' | b'\n') => return Ok(()),
+            Some(_) => *pos += 1,
+            None => return ErrorKind::InvalidName.into(),
+        }
+    }
+}
+
+#[inline]
+#[allow(unsafe_code)]
+#[target_feature(enable = "sse2")]
+#[cfg(all(target_arch = "x86_64", not(target_feature = "avx2")))]
+unsafe fn parse_name_impl_sse2(text: &str, pos: &mut usize) -> Result {
+    use std::arch::x86_64::*;
+
+    let eq = _mm_set1_epi8(b'=' as i8);
+    let sl = _mm_set1_epi8(b'/' as i8);
+    let gt = _mm_set1_epi8(b'>' as i8);
+    let sp = _mm_set1_epi8(b' ' as i8);
+    let tb = _mm_set1_epi8(b'\t' as i8);
+    let cr = _mm_set1_epi8(b'\r' as i8);
+    let nl = _mm_set1_epi8(b'\n' as i8);
+
+    for chunk in text.as_bytes().chunks_exact(16) {
+        let chunk = unsafe { _mm_loadu_epi8(chunk.as_ptr() as *const i8) };
+
+        let eq = _mm_cmpeq_epi8(chunk, eq);
+        let sl = _mm_cmpeq_epi8(chunk, sl);
+
+        let eqsl = _mm_or_si128(eq, sl);
+
+        let gt = _mm_cmpeq_epi8(chunk, gt);
+        let sp = _mm_cmpeq_epi8(chunk, sp);
+
+        let gtsp = _mm_or_si128(gt, sp);
+
+        let eqslgtsp = _mm_or_si128(eqsl, gtsp);
+
+        let tb = _mm_cmpeq_epi8(chunk, tb);
+        let cr = _mm_cmpeq_epi8(chunk, cr);
+
+        let tbcr = _mm_or_si128(tb, cr);
+
+        let eqslgtsptbcr = _mm_or_si128(eqslgtsp, tbcr);
+
+        let nl = _mm_cmpeq_epi8(chunk, nl);
+
+        let eqslgtsptbcrnl = _mm_or_si128(eqslgtsptbcr, nl);
+
+        let mask = _mm_movemask_epi8(eqslgtsptbcrnl);
+
+        if mask != 0 {
+            *pos += mask.trailing_zeros() as usize;
+
+            return Ok(());
+        }
+
+        *pos += 16;
+    }
+
+    parse_name_impl(text, pos)
+}
+
+#[inline]
+#[allow(unsafe_code)]
+#[target_feature(enable = "avx2")]
+#[cfg(all(target_arch = "x86_64", target_feature = "avx2"))]
+unsafe fn parse_name_impl_avx2(text: &str, pos: &mut usize) -> Result {
+    use std::arch::x86_64::*;
+
+    let eq = _mm256_set1_epi8(b'=' as i8);
+    let sl = _mm256_set1_epi8(b'/' as i8);
+    let gt = _mm256_set1_epi8(b'>' as i8);
+    let sp = _mm256_set1_epi8(b' ' as i8);
+    let tb = _mm256_set1_epi8(b'\t' as i8);
+    let cr = _mm256_set1_epi8(b'\r' as i8);
+    let nl = _mm256_set1_epi8(b'\n' as i8);
+
+    for chunk in text.as_bytes().chunks_exact(32) {
+        let chunk = unsafe { _mm256_loadu_epi8(chunk.as_ptr() as *const i8) };
+
+        let eq = _mm256_cmpeq_epi8(chunk, eq);
+        let sl = _mm256_cmpeq_epi8(chunk, sl);
+
+        let eqsl = _mm256_or_si256(eq, sl);
+
+        let gt = _mm256_cmpeq_epi8(chunk, gt);
+        let sp = _mm256_cmpeq_epi8(chunk, sp);
+
+        let gtsp = _mm256_or_si256(gt, sp);
+
+        let eqslgtsp = _mm256_or_si256(eqsl, gtsp);
+
+        let tb = _mm256_cmpeq_epi8(chunk, tb);
+        let cr = _mm256_cmpeq_epi8(chunk, cr);
+
+        let tbcr = _mm256_or_si256(tb, cr);
+
+        let eqslgtsptbcr = _mm256_or_si256(eqslgtsp, tbcr);
+
+        let nl = _mm256_cmpeq_epi8(chunk, nl);
+
+        let eqslgtsptbcrnl = _mm256_or_si256(eqslgtsptbcr, nl);
+
+        let mask = _mm256_movemask_epi8(eqslgtsptbcrnl);
+
+        if mask != 0 {
+            *pos += mask.trailing_zeros() as usize;
+
+            return Ok(());
+        }
+
+        *pos += 32;
+    }
+
+    parse_name_impl(text, pos)
 }
