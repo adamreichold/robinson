@@ -32,10 +32,11 @@ impl<'input> NamespacesBuilder<'input> {
     ) -> Result {
         debug_assert_ne!(prefix, Some(""));
 
-        let idx = self
-            .uris
-            .iter()
-            .position(|uri1| strings.get(*uri1) == strings.get(uri));
+        let idx = {
+            let uri = strings.get(uri);
+
+            self.uris.iter().position(|uri1| strings.get(*uri1) == uri)
+        };
 
         let namespace = match idx {
             Some(idx) => {
