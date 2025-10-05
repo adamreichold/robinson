@@ -3,7 +3,7 @@ use std::num::NonZeroU16;
 use crate::{
     error::{ErrorKind, Result},
     nodes::NodeId,
-    strings::{Strings, StringsBuilder},
+    strings::{Strings, StringsBuilder, cmp_opt_names, cmp_uris},
 };
 
 pub(crate) struct Namespaces {
@@ -35,7 +35,9 @@ impl<'input> NamespacesBuilder<'input> {
         let idx = {
             let uri = strings.get(uri);
 
-            self.uris.iter().position(|uri1| strings.get(*uri1) == uri)
+            self.uris
+                .iter()
+                .position(|uri1| cmp_uris(strings.get(*uri1), uri))
         };
 
         let namespace = match idx {
@@ -76,7 +78,7 @@ impl<'input> NamespacesBuilder<'input> {
         let namespace = self
             .data
             .iter()
-            .rfind(|data| data.prefix == prefix)
+            .rfind(|data| cmp_opt_names(data.prefix, prefix))
             .map(|data| data.namespace);
 
         match namespace {

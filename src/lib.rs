@@ -21,7 +21,7 @@ use std::num::NonZeroUsize;
 use attributes::AttributeData;
 use namespaces::{Namespace, Namespaces, NamespacesBuilder};
 use nodes::{ElementData, NodeData};
-use strings::{Strings, StringsBuilder};
+use strings::{Strings, StringsBuilder, cmp_names, cmp_opt_uris};
 
 pub use attributes::{Attribute, Attributes};
 pub use error::{Error, ErrorKind};
@@ -69,10 +69,16 @@ impl<'input> DocumentBuilder<'input> {
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Clone, Copy, Eq, PartialOrd, Ord, Hash)]
 pub struct Name<'doc, 'input> {
     pub namespace: Option<&'doc str>,
     pub local: &'input str,
+}
+
+impl PartialEq for Name<'_, '_> {
+    fn eq(&self, other: &Self) -> bool {
+        cmp_opt_uris(self.namespace, other.namespace) && cmp_names(self.local, other.local)
+    }
 }
 
 /// ```
@@ -88,7 +94,7 @@ pub struct Name<'doc, 'input> {
 /// ```
 impl PartialEq<&str> for Name<'_, '_> {
     fn eq(&self, other: &&str) -> bool {
-        self.local == *other
+        cmp_names(self.local, other)
     }
 }
 

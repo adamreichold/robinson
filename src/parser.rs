@@ -7,7 +7,7 @@ use crate::{
     attributes::AttributeData,
     error::{ErrorKind, Result},
     nodes::{ElementData, NodeData, NodeId},
-    strings::{StringBuf, StringsBuilder},
+    strings::{StringBuf, StringsBuilder, cmp_names, cmp_opt_names},
     tokenizer::{Reference, Tokenizer},
 };
 
@@ -115,14 +115,14 @@ impl<'input> Parser<'input> {
     ) -> Result {
         let value = self.normalize_attribute_value(tokenizer, value)?;
 
-        if prefix == Some("xmlns") {
+        if cmp_opt_names(prefix, Some("xmlns")) {
             self.doc.namespaces.push(
                 &mut self.doc.strings,
                 tokenizer.element_depth(),
                 Some(local),
                 value,
             )?;
-        } else if prefix.is_none() && local == "xmlns" {
+        } else if prefix.is_none() && cmp_names(local, "xmlns") {
             self.doc.namespaces.push(
                 &mut self.doc.strings,
                 tokenizer.element_depth(),
@@ -182,7 +182,7 @@ impl<'input> Parser<'input> {
             let name_namespace = name.namespace;
             let name_local = name.local;
 
-            if namespace != name_namespace || local != name_local {
+            if namespace != name_namespace || !cmp_names(local, name_local) {
                 return ErrorKind::UnexpectedCloseElement.into();
             }
         }

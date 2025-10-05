@@ -25,7 +25,7 @@ use std::str::{FromStr, ParseBoolError};
 
 use serde_core::de;
 
-use crate::{Attribute, Document, Error as XmlError, Node};
+use crate::{Attribute, Document, Error as XmlError, Node, strings::cmp_opt_names};
 
 #[cfg(feature = "raw-node")]
 pub use raw_node::RawNode;
@@ -329,7 +329,7 @@ where
             if O::NAMESPACES {
                 name == name1
             } else {
-                name.map(|name| name.local) == name1.map(|name1| name1.local)
+                cmp_opt_names(name.map(|name| name.local), name1.map(|name1| name1.local))
             }
         }))
     }

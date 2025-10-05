@@ -197,3 +197,131 @@ pub(crate) fn split_once(str_: &str, delim: u8) -> Option<(&str, &str)> {
 
     Some((before, after))
 }
+
+pub(crate) fn cmp_names(lhs: &str, rhs: &str) -> bool {
+    let len = lhs.len();
+    if len != rhs.len() {
+        return false;
+    }
+
+    let lhs = lhs.as_bytes();
+    let rhs = rhs.as_bytes();
+
+    if len >= 8 {
+        let lhs_lo = u64::from_le_bytes(lhs[0..8].try_into().unwrap());
+        let rhs_lo = u64::from_le_bytes(rhs[0..8].try_into().unwrap());
+        if lhs_lo != rhs_lo {
+            return false;
+        } else if len == 8 {
+            return true;
+        }
+
+        let lhs_hi = u64::from_le_bytes(lhs[len - 8..].try_into().unwrap());
+        let rhs_hi = u64::from_le_bytes(rhs[len - 8..].try_into().unwrap());
+        if lhs_hi != rhs_hi {
+            return false;
+        } else if len <= 16 {
+            return true;
+        }
+    } else if len >= 4 {
+        let lhs_lo = u32::from_le_bytes(lhs[0..4].try_into().unwrap());
+        let rhs_lo = u32::from_le_bytes(rhs[0..4].try_into().unwrap());
+        if lhs_lo != rhs_lo {
+            return false;
+        }
+
+        let lhs_hi = u32::from_le_bytes(lhs[len - 4..].try_into().unwrap());
+        let rhs_hi = u32::from_le_bytes(rhs[len - 4..].try_into().unwrap());
+        return lhs_hi == rhs_hi;
+    } else if len > 0 {
+        let lhs_lo = lhs[0];
+        let rhs_lo = rhs[0];
+        if lhs_lo != rhs_lo {
+            return false;
+        }
+
+        let lhs_mid = lhs[len / 2];
+        let rhs_mid = rhs[len / 2];
+        if lhs_mid != rhs_mid {
+            return false;
+        }
+
+        let lhs_hi = lhs[len - 1];
+        let rhs_hi = rhs[len - 1];
+        return lhs_hi == rhs_hi;
+    } else {
+        return true;
+    }
+
+    lhs == rhs
+}
+
+pub(crate) fn cmp_opt_names(lhs: Option<&str>, rhs: Option<&str>) -> bool {
+    match (lhs, rhs) {
+        (Some(lhs), Some(rhs)) => cmp_names(lhs, rhs),
+        (Some(_), None) | (None, Some(_)) => false,
+        (None, None) => true,
+    }
+}
+
+pub(crate) fn cmp_uris(lhs: &str, rhs: &str) -> bool {
+    let len = lhs.len();
+    if len != rhs.len() {
+        return false;
+    }
+
+    let lhs = lhs.as_bytes();
+    let rhs = rhs.as_bytes();
+
+    if len >= 8 {
+        let lhs_last = u64::from_le_bytes(lhs[len - 8..].try_into().unwrap());
+        let rhs_last = u64::from_le_bytes(rhs[len - 8..].try_into().unwrap());
+        if lhs_last != rhs_last {
+            return false;
+        }
+    }
+
+    lhs == rhs
+}
+
+pub(crate) fn cmp_opt_uris(lhs: Option<&str>, rhs: Option<&str>) -> bool {
+    match (lhs, rhs) {
+        (Some(lhs), Some(rhs)) => cmp_uris(lhs, rhs),
+        (Some(_), None) | (None, Some(_)) => false,
+        (None, None) => true,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn cmp_names_works() {
+        assert!(cmp_names("", ""));
+        assert!(cmp_names("gmd", "gmd"));
+        assert!(!cmp_names("gmd", "gmx"));
+        assert!(cmp_names("geonet", "geonet"));
+        assert!(!cmp_names("geonet", "isonet"));
+        assert!(cmp_names("CharacterString", "CharacterString"));
+        assert!(!cmp_names("CharacterString", "CharacterVector"));
+        assert!(cmp_names("administrativeArea", "administrativeArea"));
+        assert!(!cmp_names("administrativeArea", "administrativeZone"));
+        assert!(!cmp_names("geonet", "geo"));
+    }
+
+    #[test]
+    fn cmp_uris_works() {
+        assert!(!cmp_uris("geo", "iso"));
+        assert!(cmp_uris("geonet", "geonet"));
+        assert!(cmp_uris(
+            "http://www.isotc211.org/2005/gmd",
+            "http://www.isotc211.org/2005/gmd"
+        ));
+        assert!(!cmp_uris(
+            "http://www.isotc211.org/2005/gmd",
+            "http://www.isotc211.org/2005/gmx"
+        ));
+        assert!(!cmp_uris("geonet", "geo"));
+    }
+}
