@@ -1,4 +1,5 @@
 use std::mem::swap;
+use std::simd::{LaneCount, Simd, SupportedLaneCount, cmp::SimdPartialEq};
 
 use memchr::{memchr, memmem::Finder};
 
@@ -378,13 +379,7 @@ impl<'input> Tokenizer<'input> {
     fn parse_name(&mut self) -> Result<&'input str> {
         let mut pos = 0;
 
-        loop {
-            match self.text.as_bytes().get(pos) {
-                Some(b'=' | b'/' | b'>' | b' ' | b'\t' | b'\r' | b'\n') => break,
-                Some(_) => pos += 1,
-                None => return ErrorKind::InvalidName.into(),
-            }
-        }
+        parse_name_impl_simd::<32>(self.text, &mut pos)?;
 
         let (name, rest) = self.text.split_at(pos);
         self.text = rest;
@@ -511,4 +506,46 @@ impl<'input> Tokenizer<'input> {
 
         Ok(Reference::Char(char_))
     }
+}
+
+#[cold]
+#[inline(never)]
+fn parse_name_impl(text: &str, pos: &mut usize) -> Result {
+    loop {
+        match text.as_bytes().get(*pos) {
+            Some(b'=' | b'/' | b'>' | b' ' | b'\t' | b'\r' | b'\n') => return Ok(()),
+            Some(_) => *pos += 1,
+            None => return ErrorKind::InvalidName.into(),
+        }
+    }
+}
+
+#[inline(always)]
+fn parse_name_impl_simd<const N: usize>(text: &str, pos: &mut usize) -> Result
+where
+    LaneCount<N>: SupportedLaneCount,
+{
+    let (chunks, _rest) = text.as_bytes().as_chunks::<N>();
+
+    for chunk in chunks {
+        let chunk = Simd::from_array(*chunk);
+
+        let mut mask = chunk.simd_eq(Simd::splat(b'='));
+        mask |= chunk.simd_eq(Simd::splat(b'/'));
+        mask |= chunk.simd_eq(Simd::splat(b'>'));
+        mask |= chunk.simd_eq(Simd::splat(b' '));
+        mask |= chunk.simd_eq(Simd::splat(b'\t'));
+        mask |= chunk.simd_eq(Simd::splat(b'\r'));
+        mask |= chunk.simd_eq(Simd::splat(b'\n'));
+
+        if let Some(off) = mask.first_set() {
+            *pos += off;
+
+            return Ok(());
+        }
+
+        *pos += N;
+    }
+
+    parse_name_impl(text, pos)
 }
