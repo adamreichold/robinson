@@ -397,35 +397,11 @@ impl<'input> Tokenizer<'input> {
     }
 
     fn parse_qualname(&mut self) -> Result<(Option<&'input str>, &'input str)> {
-        let mut pos = 0;
-        let mut prefix_pos = None;
+        let qualname = self.parse_name()?;
 
-        loop {
-            match self.text.as_bytes().get(pos) {
-                Some(b'=' | b'/' | b'>' | b' ' | b'\t' | b'\r' | b'\n') => break,
-                Some(b':') => {
-                    if prefix_pos.is_some() {
-                        return ErrorKind::InvalidName.into();
-                    }
-
-                    prefix_pos = Some(pos);
-
-                    pos += 1;
-                }
-                Some(_) => pos += 1,
-                None => return ErrorKind::InvalidName.into(),
-            }
-        }
-
-        let (qualname, rest) = self.text.split_at(pos);
-        self.text = rest;
-
-        let (prefix, local) = match prefix_pos {
-            Some(prefix_pos) => {
-                let prefix = &qualname[..prefix_pos];
-                let local = &qualname[prefix_pos + 1..];
-
-                if prefix.is_empty() {
+        let (prefix, local) = match split_once(qualname, b':') {
+            Some((prefix, local)) => {
+                if prefix.is_empty() || local.is_empty() {
                     return ErrorKind::InvalidName.into();
                 }
 
@@ -433,10 +409,6 @@ impl<'input> Tokenizer<'input> {
             }
             None => (None, qualname),
         };
-
-        if local.is_empty() {
-            return ErrorKind::InvalidName.into();
-        }
 
         Ok((prefix, local))
     }

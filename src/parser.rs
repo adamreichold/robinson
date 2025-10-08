@@ -45,6 +45,7 @@ struct CurrElement<'input> {
     local: &'input str,
 }
 
+#[derive(Clone, Copy)]
 struct CurrAttribute<'input> {
     prefix: Option<&'input str>,
     local: &'input str,
