@@ -2,8 +2,6 @@
 
 use std::mem::take;
 
-use memchr::memchr;
-
 use crate::{
     error::{ErrorKind, Result},
     nodes::NodeId,
@@ -168,6 +166,31 @@ impl<'doc, 'input> StringBuf<'doc, 'input> {
     }
 }
 
+pub(crate) struct One(
+    #[cfg(not(all(target_arch = "x86_64", target_feature = "avx2")))]
+    memchr::arch::all::memchr::One,
+    #[cfg(all(target_arch = "x86_64", target_feature = "avx2"))]
+    memchr::arch::x86_64::avx2::memchr::One,
+);
+
+impl One {
+    pub(crate) fn new(needle: u8) -> Self {
+        assert!(needle.is_ascii());
+
+        #[cfg(not(all(target_arch = "x86_64", target_feature = "avx2")))]
+        let this = Self(memchr::arch::all::memchr::One::new(needle));
+
+        #[cfg(all(target_arch = "x86_64", target_feature = "avx2"))]
+        let this = Self(unsafe { memchr::arch::x86_64::avx2::memchr::One::new_unchecked(needle) });
+
+        this
+    }
+
+    pub(crate) fn find(&self, haystack: &[u8]) -> Option<usize> {
+        self.0.find(haystack)
+    }
+}
+
 #[inline]
 pub(crate) fn split_first<const N: usize>(str_: &str, bytes: [u8; N]) -> Option<(u8, &str)> {
     assert!(bytes.is_ascii());
@@ -185,10 +208,8 @@ pub(crate) fn split_first<const N: usize>(str_: &str, bytes: [u8; N]) -> Option<
 }
 
 #[inline]
-pub(crate) fn split_once(str_: &str, delim: u8) -> Option<(&str, &str)> {
-    assert!(delim.is_ascii());
-
-    let pos = memchr(delim, str_.as_bytes())?;
+pub(crate) fn split_once<'a>(str_: &'a str, delim: &One) -> Option<(&'a str, &'a str)> {
+    let pos = delim.find(str_.as_bytes())?;
 
     // SAFETY: `delim` is a ASCII character hence preceeded by a character boundary.
     let before = unsafe { str_.get_unchecked(..pos) };

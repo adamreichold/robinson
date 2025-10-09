@@ -1,17 +1,22 @@
 use std::mem::swap;
 
-use memchr::{memchr, memmem::Finder};
+use memchr::memmem::Finder;
 
 use crate::{
     error::{Error, ErrorKind, Result},
     parser::Parser,
-    strings::{split_first, split_once},
+    strings::{One, split_first, split_once},
 };
 
 pub(crate) struct Tokenizer<'input> {
     text: &'input str,
     init_text: &'input str,
     element_depth: u16,
+    lt: One,
+    colon: One,
+    semicolon: One,
+    quote: One,
+    doublequote: One,
     pi: Finder<'static>,
     comment: Finder<'static>,
     cdata: Finder<'static>,
@@ -29,6 +34,11 @@ impl<'input> Tokenizer<'input> {
             text,
             init_text: text,
             element_depth: 0,
+            lt: One::new(b'<'),
+            colon: One::new(b':'),
+            semicolon: One::new(b';'),
+            quote: One::new(b'\''),
+            doublequote: One::new(b'"'),
             pi: Finder::new(b"?>"),
             comment: Finder::new(b"-->"),
             cdata: Finder::new(b"]]>"),
@@ -356,7 +366,10 @@ impl<'input> Tokenizer<'input> {
     fn parse_text(&mut self, parser: &mut Parser<'input>) -> Result {
         debug_assert!(!self.text.is_empty());
 
-        let pos = memchr(b'<', self.text.as_bytes()).unwrap_or(self.text.len());
+        let pos = self
+            .lt
+            .find(self.text.as_bytes())
+            .unwrap_or(self.text.len());
 
         let (text, rest) = self.text.split_at(pos);
         self.text = rest;
@@ -399,7 +412,7 @@ impl<'input> Tokenizer<'input> {
     fn parse_qualname(&mut self) -> Result<(Option<&'input str>, &'input str)> {
         let qualname = self.parse_name()?;
 
-        let (prefix, local) = match split_once(qualname, b':') {
+        let (prefix, local) = match split_once(qualname, &self.colon) {
             Some((prefix, local)) => {
                 if prefix.is_empty() || local.is_empty() {
                     return ErrorKind::InvalidName.into();
@@ -415,6 +428,12 @@ impl<'input> Tokenizer<'input> {
 
     fn parse_quoted(&mut self) -> Result<&'input str> {
         let quote = self.expect_quote()?;
+
+        let quote = if quote == b'"' {
+            &self.doublequote
+        } else {
+            &self.quote
+        };
 
         let Some((quoted, rest)) = split_once(self.text, quote) else {
             return ErrorKind::ExpectedQuote.into();
@@ -481,7 +500,7 @@ impl<'input> Tokenizer<'input> {
     }
 
     pub(crate) fn parse_reference(&mut self) -> Result<Reference<'input>> {
-        let Some((value, rest)) = split_once(self.text, b';') else {
+        let Some((value, rest)) = split_once(self.text, &self.semicolon) else {
             return ErrorKind::ExpectedLiteral(";").into();
         };
         self.text = rest;
