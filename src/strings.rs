@@ -2,8 +2,6 @@
 
 use std::mem::take;
 
-use memchr::memchr;
-
 use crate::{
     error::{ErrorKind, Result},
     nodes::NodeId,
@@ -166,6 +164,76 @@ impl<'doc, 'input> StringBuf<'doc, 'input> {
 
         Ok(id)
     }
+}
+
+#[inline]
+pub(crate) fn memchr(needle: u8, haystack: &[u8]) -> Option<usize> {
+    #[cfg(all(target_arch = "x86_64", target_feature = "avx2"))]
+    let pos =
+        unsafe { memchr::arch::x86_64::avx2::memchr::One::new_unchecked(needle).find(haystack) };
+
+    #[cfg(all(target_arch = "x86_64", not(target_feature = "avx2")))]
+    let pos =
+        unsafe { memchr::arch::x86_64::sse2::memchr::One::new_unchecked(needle).find(haystack) };
+
+    #[cfg(not(target_arch = "x86_64"))]
+    let pos = memchr::arch::all::memchr::One::new(needle).find(haystack);
+
+    pos
+}
+
+#[inline]
+pub(crate) fn memchr_count(needle: u8, haystack: &[u8]) -> usize {
+    #[cfg(all(target_arch = "x86_64", target_feature = "avx2"))]
+    let cnt =
+        unsafe { memchr::arch::x86_64::avx2::memchr::One::new_unchecked(needle).count(haystack) };
+
+    #[cfg(all(target_arch = "x86_64", not(target_feature = "avx2")))]
+    let cnt =
+        unsafe { memchr::arch::x86_64::sse2::memchr::One::new_unchecked(needle).count(haystack) };
+
+    #[cfg(not(target_arch = "x86_64"))]
+    let cnt = memchr::arch::all::memchr::One::new(needle).count(haystack);
+
+    cnt
+}
+
+#[inline]
+pub(crate) fn memchr2(needle1: u8, needle2: u8, haystack: &[u8]) -> Option<usize> {
+    #[cfg(all(target_arch = "x86_64", target_feature = "avx2"))]
+    let pos = unsafe {
+        memchr::arch::x86_64::avx2::memchr::Two::new_unchecked(needle1, needle2).find(haystack)
+    };
+
+    #[cfg(all(target_arch = "x86_64", not(target_feature = "avx2")))]
+    let pos = unsafe {
+        memchr::arch::x86_64::sse2::memchr::Two::new_unchecked(needle1, needle2).find(haystack)
+    };
+
+    #[cfg(not(target_arch = "x86_64"))]
+    let pos = memchr::arch::all::memchr::Two::new(needle1, needle2).find(haystack);
+
+    pos
+}
+
+#[inline]
+pub(crate) fn memchr3(needle1: u8, needle2: u8, needle3: u8, haystack: &[u8]) -> Option<usize> {
+    #[cfg(all(target_arch = "x86_64", target_feature = "avx2"))]
+    let pos = unsafe {
+        memchr::arch::x86_64::avx2::memchr::Three::new_unchecked(needle1, needle2, needle3)
+            .find(haystack)
+    };
+
+    #[cfg(all(target_arch = "x86_64", not(target_feature = "avx2")))]
+    let pos = unsafe {
+        memchr::arch::x86_64::sse2::memchr::Three::new_unchecked(needle1, needle2, needle3)
+            .find(haystack)
+    };
+
+    #[cfg(not(target_arch = "x86_64"))]
+    let pos = memchr::arch::all::memchr::Three::new(needle1, needle2, needle3).find(haystack);
+
+    pos
 }
 
 #[inline]
