@@ -1,11 +1,9 @@
 use std::mem::swap;
 
-use memchr::{memchr, memmem::Finder};
-
 use crate::{
     error::{Error, ErrorKind, Result},
     parser::Parser,
-    strings::{split_first, split_once},
+    strings::{Finder, memchr, split_first, split_once},
 };
 
 pub(crate) struct Tokenizer<'input> {

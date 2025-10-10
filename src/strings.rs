@@ -2,8 +2,6 @@
 
 use std::mem::take;
 
-use memchr::memchr;
-
 use crate::{
     error::{ErrorKind, Result},
     nodes::NodeId,
@@ -165,6 +163,109 @@ impl<'doc, 'input> StringBuf<'doc, 'input> {
         self.strings.vals.push((self.pos as u32, len as u32 | TAG));
 
         Ok(id)
+    }
+}
+
+pub(crate) fn memchr(needle: u8, haystack: &[u8]) -> Option<usize> {
+    #[cfg(all(target_arch = "x86_64", target_feature = "avx2"))]
+    let pos =
+        unsafe { memchr::arch::x86_64::avx2::memchr::One::new_unchecked(needle).find(haystack) };
+
+    #[cfg(all(target_arch = "x86_64", not(target_feature = "avx2")))]
+    let pos =
+        unsafe { memchr::arch::x86_64::sse2::memchr::One::new_unchecked(needle).find(haystack) };
+
+    #[cfg(not(target_arch = "x86_64"))]
+    let pos = memchr::arch::all::memchr::One::new(needle).find(haystack);
+
+    pos
+}
+
+pub(crate) fn memchr_count(needle: u8, haystack: &[u8]) -> usize {
+    #[cfg(all(target_arch = "x86_64", target_feature = "avx2"))]
+    let cnt =
+        unsafe { memchr::arch::x86_64::avx2::memchr::One::new_unchecked(needle).count(haystack) };
+
+    #[cfg(all(target_arch = "x86_64", not(target_feature = "avx2")))]
+    let cnt =
+        unsafe { memchr::arch::x86_64::sse2::memchr::One::new_unchecked(needle).count(haystack) };
+
+    #[cfg(not(target_arch = "x86_64"))]
+    let cnt = memchr::arch::all::memchr::One::new(needle).count(haystack);
+
+    cnt
+}
+
+pub(crate) fn memchr2(needle1: u8, needle2: u8, haystack: &[u8]) -> Option<usize> {
+    #[cfg(all(target_arch = "x86_64", target_feature = "avx2"))]
+    let pos = unsafe {
+        memchr::arch::x86_64::avx2::memchr::Two::new_unchecked(needle1, needle2).find(haystack)
+    };
+
+    #[cfg(all(target_arch = "x86_64", not(target_feature = "avx2")))]
+    let pos = unsafe {
+        memchr::arch::x86_64::sse2::memchr::Two::new_unchecked(needle1, needle2).find(haystack)
+    };
+
+    #[cfg(not(target_arch = "x86_64"))]
+    let pos = memchr::arch::all::memchr::Two::new(needle1, needle2).find(haystack);
+
+    pos
+}
+
+pub(crate) fn memchr3(needle1: u8, needle2: u8, needle3: u8, haystack: &[u8]) -> Option<usize> {
+    #[cfg(all(target_arch = "x86_64", target_feature = "avx2"))]
+    let pos = unsafe {
+        memchr::arch::x86_64::avx2::memchr::Three::new_unchecked(needle1, needle2, needle3)
+            .find(haystack)
+    };
+
+    #[cfg(all(target_arch = "x86_64", not(target_feature = "avx2")))]
+    let pos = unsafe {
+        memchr::arch::x86_64::sse2::memchr::Three::new_unchecked(needle1, needle2, needle3)
+            .find(haystack)
+    };
+
+    #[cfg(not(target_arch = "x86_64"))]
+    let pos = memchr::arch::all::memchr::Three::new(needle1, needle2, needle3).find(haystack);
+
+    pos
+}
+
+pub(crate) struct Finder<'a> {
+    #[cfg(all(target_arch = "x86_64", target_feature = "avx2"))]
+    packedpair: memchr::arch::x86_64::avx2::packedpair::Finder,
+    #[cfg(all(target_arch = "x86_64", not(target_feature = "avx2")))]
+    packedpair: memchr::arch::x86_64::sse2::packedpair::Finder,
+
+    twoway: memchr::arch::all::twoway::Finder,
+
+    needle: &'a [u8],
+}
+
+impl<'a> Finder<'a> {
+    pub(crate) fn new(needle: &'a [u8]) -> Self {
+        #[cfg(all(target_arch = "x86_64", target_feature = "avx2"))]
+        let packedpair = memchr::arch::x86_64::avx2::packedpair::Finder::new(needle).unwrap();
+        #[cfg(all(target_arch = "x86_64", not(target_feature = "avx2")))]
+        let packedpair = memchr::arch::x86_64::sse2::packedpair::Finder::new(needle).unwrap();
+
+        let twoway = memchr::arch::all::twoway::Finder::new(needle);
+
+        Self {
+            packedpair,
+            twoway,
+            needle,
+        }
+    }
+
+    pub(crate) fn find(&self, haystack: &[u8]) -> Option<usize> {
+        #[cfg(target_arch = "x86_64")]
+        if haystack.len() >= self.packedpair.min_haystack_len() {
+            return self.packedpair.find(haystack, self.needle);
+        }
+
+        self.twoway.find(haystack, self.needle)
     }
 }
 
