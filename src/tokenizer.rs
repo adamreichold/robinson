@@ -378,13 +378,19 @@ impl<'input> Tokenizer<'input> {
     fn parse_name(&mut self) -> Result<&'input str> {
         let mut pos = 0;
 
-        #[cfg(not(target_arch = "x86_64"))]
+        #[cfg(not(all(
+            target_arch = "x86_64",
+            any(target_feature = "ssse3", target_feature = "avx2")
+        )))]
         parse_name_impl(self.text, &mut pos)?;
 
         #[allow(unsafe_code)]
-        #[cfg(all(target_arch = "x86_64", not(target_feature = "avx2")))]
+        #[cfg(all(
+            target_arch = "x86_64",
+            all(target_feature = "ssse3", not(target_feature = "avx2"))
+        ))]
         unsafe {
-            parse_name_impl_sse2(self.text, &mut pos)?;
+            parse_name_impl_ssse3(self.text, &mut pos)?;
         }
 
         #[allow(unsafe_code)]
@@ -520,9 +526,27 @@ impl<'input> Tokenizer<'input> {
     }
 }
 
-#[cfg_attr(target_arch = "x86_64", cold)]
-#[cfg_attr(target_arch = "x86_64", inline(never))]
-#[cfg_attr(not(target_arch = "x86_64"), inline(always))]
+#[cfg_attr(
+    all(
+        target_arch = "x86_64",
+        any(target_feature = "ssse3", target_feature = "avx2")
+    ),
+    cold
+)]
+#[cfg_attr(
+    all(
+        target_arch = "x86_64",
+        any(target_feature = "ssse3", target_feature = "avx2")
+    ),
+    inline(never)
+)]
+#[cfg_attr(
+    not(all(
+        target_arch = "x86_64",
+        any(target_feature = "ssse3", target_feature = "avx2")
+    )),
+    inline(always)
+)]
 fn parse_name_impl(text: &str, pos: &mut usize) -> Result {
     loop {
         match text.as_bytes().get(*pos) {
@@ -535,49 +559,67 @@ fn parse_name_impl(text: &str, pos: &mut usize) -> Result {
 
 #[inline]
 #[allow(unsafe_code)]
-#[target_feature(enable = "sse2")]
-#[cfg(all(target_arch = "x86_64", not(target_feature = "avx2")))]
-unsafe fn parse_name_impl_sse2(text: &str, pos: &mut usize) -> Result {
+#[target_feature(enable = "ssse3")]
+#[cfg(all(
+    target_arch = "x86_64",
+    all(target_feature = "ssse3", not(target_feature = "avx2"))
+))]
+unsafe fn parse_name_impl_ssse3(text: &str, pos: &mut usize) -> Result {
     use std::arch::x86_64::*;
 
-    let eq = _mm_set1_epi8(b'=' as i8);
-    let sl = _mm_set1_epi8(b'/' as i8);
-    let gt = _mm_set1_epi8(b'>' as i8);
-    let sp = _mm_set1_epi8(b' ' as i8);
-    let tb = _mm_set1_epi8(b'\t' as i8);
-    let cr = _mm_set1_epi8(b'\r' as i8);
-    let nl = _mm_set1_epi8(b'\n' as i8);
+    const BYTES: [u8; 7] = [b'=', b'/', b'>', b' ', b'\t', b'\r', b'\n'];
+
+    #[repr(align(16))]
+    struct AlignedTable([u8; 16]);
+
+    static LO_BYTES: AlignedTable = {
+        let mut lo_bytes = [0; 16];
+
+        let mut idx = 0;
+        while idx < BYTES.len() {
+            let nibble = BYTES[idx] & 0xF;
+
+            lo_bytes[nibble as usize] |= 1 << idx;
+
+            idx += 1;
+        }
+
+        AlignedTable(lo_bytes)
+    };
+
+    static HI_BYTES: AlignedTable = {
+        let mut hi_bytes = [0; 16];
+
+        let mut idx = 0;
+        while idx < BYTES.len() {
+            let nibble = BYTES[idx] >> 4;
+
+            hi_bytes[nibble as usize] |= 1 << idx;
+
+            idx += 1;
+        }
+
+        AlignedTable(hi_bytes)
+    };
+
+    let lo_bytes = unsafe { _mm_load_si128(LO_BYTES.0.as_ptr() as *const __m128i) };
+    let hi_bytes = unsafe { _mm_load_si128(HI_BYTES.0.as_ptr() as *const __m128i) };
 
     for chunk in text.as_bytes().chunks_exact(16) {
         let chunk = unsafe { _mm_loadu_epi8(chunk.as_ptr() as *const i8) };
 
-        let eq = _mm_cmpeq_epi8(chunk, eq);
-        let sl = _mm_cmpeq_epi8(chunk, sl);
+        let lo_chunk = _mm_and_si128(chunk, _mm_set1_epi8(0xF));
+        let lo_hits = _mm_shuffle_epi8(lo_bytes, lo_chunk);
 
-        let eqsl = _mm_or_si128(eq, sl);
+        let hi_chunk = _mm_and_si128(_mm_srli_epi16(chunk, 4), _mm_set1_epi8(0xF));
+        let hi_hits = _mm_shuffle_epi8(hi_bytes, hi_chunk);
 
-        let gt = _mm_cmpeq_epi8(chunk, gt);
-        let sp = _mm_cmpeq_epi8(chunk, sp);
+        let hits = _mm_and_si128(lo_hits, hi_hits);
 
-        let gtsp = _mm_or_si128(gt, sp);
+        let mask = _mm_movemask_epi8(_mm_cmpeq_epi8(hits, _mm_set1_epi8(0))) as u32;
 
-        let eqslgtsp = _mm_or_si128(eqsl, gtsp);
-
-        let tb = _mm_cmpeq_epi8(chunk, tb);
-        let cr = _mm_cmpeq_epi8(chunk, cr);
-
-        let tbcr = _mm_or_si128(tb, cr);
-
-        let eqslgtsptbcr = _mm_or_si128(eqslgtsp, tbcr);
-
-        let nl = _mm_cmpeq_epi8(chunk, nl);
-
-        let eqslgtsptbcrnl = _mm_or_si128(eqslgtsptbcr, nl);
-
-        let mask = _mm_movemask_epi8(eqslgtsptbcrnl);
-
-        if mask != 0 {
-            *pos += mask.trailing_zeros() as usize;
+        if mask != 0xFF_FF {
+            *pos += mask.trailing_ones() as usize;
 
             return Ok(());
         }
@@ -595,44 +637,61 @@ unsafe fn parse_name_impl_sse2(text: &str, pos: &mut usize) -> Result {
 unsafe fn parse_name_impl_avx2(text: &str, pos: &mut usize) -> Result {
     use std::arch::x86_64::*;
 
-    let eq = _mm256_set1_epi8(b'=' as i8);
-    let sl = _mm256_set1_epi8(b'/' as i8);
-    let gt = _mm256_set1_epi8(b'>' as i8);
-    let sp = _mm256_set1_epi8(b' ' as i8);
-    let tb = _mm256_set1_epi8(b'\t' as i8);
-    let cr = _mm256_set1_epi8(b'\r' as i8);
-    let nl = _mm256_set1_epi8(b'\n' as i8);
+    const BYTES: [u8; 7] = [b'=', b'/', b'>', b' ', b'\t', b'\r', b'\n'];
+
+    #[repr(align(32))]
+    struct AlignedTable([u8; 32]);
+
+    static LO_BYTES: AlignedTable = {
+        let mut lo_bytes = [0; 32];
+
+        let mut idx = 0;
+        while idx < BYTES.len() {
+            let nibble = BYTES[idx] & 0xF;
+
+            lo_bytes[nibble as usize] |= 1 << idx;
+            lo_bytes[16 + nibble as usize] |= 1 << idx;
+
+            idx += 1;
+        }
+
+        AlignedTable(lo_bytes)
+    };
+
+    static HI_BYTES: AlignedTable = {
+        let mut hi_bytes = [0; 32];
+
+        let mut idx = 0;
+        while idx < BYTES.len() {
+            let nibble = BYTES[idx] >> 4;
+
+            hi_bytes[nibble as usize] |= 1 << idx;
+            hi_bytes[16 + nibble as usize] |= 1 << idx;
+
+            idx += 1;
+        }
+
+        AlignedTable(hi_bytes)
+    };
+
+    let lo_bytes = unsafe { _mm256_load_si256(LO_BYTES.0.as_ptr() as *const __m256i) };
+    let hi_bytes = unsafe { _mm256_load_si256(HI_BYTES.0.as_ptr() as *const __m256i) };
 
     for chunk in text.as_bytes().chunks_exact(32) {
         let chunk = unsafe { _mm256_loadu_epi8(chunk.as_ptr() as *const i8) };
 
-        let eq = _mm256_cmpeq_epi8(chunk, eq);
-        let sl = _mm256_cmpeq_epi8(chunk, sl);
+        let lo_chunk = _mm256_and_si256(chunk, _mm256_set1_epi8(0xF));
+        let lo_hits = _mm256_shuffle_epi8(lo_bytes, lo_chunk);
 
-        let eqsl = _mm256_or_si256(eq, sl);
+        let hi_chunk = _mm256_and_si256(_mm256_srli_epi16(chunk, 4), _mm256_set1_epi8(0xF));
+        let hi_hits = _mm256_shuffle_epi8(hi_bytes, hi_chunk);
 
-        let gt = _mm256_cmpeq_epi8(chunk, gt);
-        let sp = _mm256_cmpeq_epi8(chunk, sp);
+        let hits = _mm256_and_si256(lo_hits, hi_hits);
 
-        let gtsp = _mm256_or_si256(gt, sp);
+        let mask = _mm256_movemask_epi8(_mm256_cmpeq_epi8(hits, _mm256_set1_epi8(0))) as u32;
 
-        let eqslgtsp = _mm256_or_si256(eqsl, gtsp);
-
-        let tb = _mm256_cmpeq_epi8(chunk, tb);
-        let cr = _mm256_cmpeq_epi8(chunk, cr);
-
-        let tbcr = _mm256_or_si256(tb, cr);
-
-        let eqslgtsptbcr = _mm256_or_si256(eqslgtsp, tbcr);
-
-        let nl = _mm256_cmpeq_epi8(chunk, nl);
-
-        let eqslgtsptbcrnl = _mm256_or_si256(eqslgtsptbcr, nl);
-
-        let mask = _mm256_movemask_epi8(eqslgtsptbcrnl);
-
-        if mask != 0 {
-            *pos += mask.trailing_zeros() as usize;
+        if mask != 0xFF_FF_FF_FF {
+            *pos += mask.trailing_ones() as usize;
 
             return Ok(());
         }
