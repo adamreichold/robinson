@@ -597,13 +597,15 @@ unsafe fn parse_qualname_impl_ssse3(
     prefix_pos: &mut Option<usize>,
 ) -> Result {
     use std::arch::x86_64::*;
+    use std::mem::transmute;
 
     const BYTES: [u8; 8] = [b'=', b'/', b'>', b' ', b'\t', b'\r', b'\n', b':'];
 
+    #[allow(dead_code)]
     #[repr(align(16))]
     struct AlignedTable([u8; 16]);
 
-    static LO_BYTES: AlignedTable = {
+    const LO_BYTES: __m128i = {
         let mut lo_bytes = [0; 16];
 
         let mut idx = 0;
@@ -615,10 +617,12 @@ unsafe fn parse_qualname_impl_ssse3(
             idx += 1;
         }
 
-        AlignedTable(lo_bytes)
+        // SAFETY: The representation of `__m128i` is equivalent
+        // to `[u8; 16]` and `repr(align(..))` ensures alignment.
+        unsafe { transmute(AlignedTable(lo_bytes)) }
     };
 
-    static HI_BYTES: AlignedTable = {
+    const HI_BYTES: __m128i = {
         let mut hi_bytes = [0; 16];
 
         let mut idx = 0;
@@ -630,23 +634,20 @@ unsafe fn parse_qualname_impl_ssse3(
             idx += 1;
         }
 
-        AlignedTable(hi_bytes)
+        // SAFETY: The representation of `__m128i` is equivalent
+        // to `[u8; 16]` and `repr(align(..))` ensures alignment.
+        unsafe { transmute(AlignedTable(hi_bytes)) }
     };
-
-    // SAFETY: These tables are initialized during program start
-    // and sufficiently aligned via `repr(align(..))`.
-    let lo_bytes = unsafe { _mm_load_si128(LO_BYTES.0.as_ptr() as *const __m128i) };
-    let hi_bytes = unsafe { _mm_load_si128(HI_BYTES.0.as_ptr() as *const __m128i) };
 
     for chunk in text.as_bytes().chunks_exact(16) {
         // SAFETY: While unaligned, `chunks_exact` ensures 16 bytes of valid data.
         let chunk = unsafe { _mm_loadu_si128(chunk.as_ptr() as *const __m128i) };
 
         let lo_chunk = _mm_and_si128(chunk, _mm_set1_epi8(0xF));
-        let lo_hits = _mm_shuffle_epi8(lo_bytes, lo_chunk);
+        let lo_hits = _mm_shuffle_epi8(LO_BYTES, lo_chunk);
 
         let hi_chunk = _mm_and_si128(_mm_srli_epi16(chunk, 4), _mm_set1_epi8(0xF));
-        let hi_hits = _mm_shuffle_epi8(hi_bytes, hi_chunk);
+        let hi_hits = _mm_shuffle_epi8(HI_BYTES, hi_chunk);
 
         let hits = _mm_and_si128(lo_hits, hi_hits);
 
@@ -694,13 +695,15 @@ unsafe fn parse_qualname_impl_avx2(
     prefix_pos: &mut Option<usize>,
 ) -> Result {
     use std::arch::x86_64::*;
+    use std::mem::transmute;
 
     const BYTES: [u8; 8] = [b'=', b'/', b'>', b' ', b'\t', b'\r', b'\n', b':'];
 
+    #[allow(dead_code)]
     #[repr(align(32))]
     struct AlignedTable([u8; 32]);
 
-    static LO_BYTES: AlignedTable = {
+    const LO_BYTES: __m256i = {
         let mut lo_bytes = [0; 32];
 
         let mut idx = 0;
@@ -713,10 +716,12 @@ unsafe fn parse_qualname_impl_avx2(
             idx += 1;
         }
 
-        AlignedTable(lo_bytes)
+        // SAFETY: The representation of `__m256i` is equivalent
+        // to `[u8; 32]` and `repr(align(..))` ensures alignment.
+        unsafe { transmute(AlignedTable(lo_bytes)) }
     };
 
-    static HI_BYTES: AlignedTable = {
+    const HI_BYTES: __m256i = {
         let mut hi_bytes = [0; 32];
 
         let mut idx = 0;
@@ -729,23 +734,20 @@ unsafe fn parse_qualname_impl_avx2(
             idx += 1;
         }
 
-        AlignedTable(hi_bytes)
+        // SAFETY: The representation of `__m256i` is equivalent
+        // to `[u8; 32]` and `repr(align(..))` ensures alignment.
+        unsafe { transmute(AlignedTable(hi_bytes)) }
     };
-
-    // SAFETY: These tables are initialized during program start
-    // and sufficiently aligned via `repr(align(..))`.
-    let lo_bytes = unsafe { _mm256_load_si256(LO_BYTES.0.as_ptr() as *const __m256i) };
-    let hi_bytes = unsafe { _mm256_load_si256(HI_BYTES.0.as_ptr() as *const __m256i) };
 
     for chunk in text.as_bytes().chunks_exact(32) {
         // SAFETY: While unaligned, `chunks_exact` ensures 32 bytes of valid data.
         let chunk = unsafe { _mm256_loadu_si256(chunk.as_ptr() as *const __m256i) };
 
         let lo_chunk = _mm256_and_si256(chunk, _mm256_set1_epi8(0xF));
-        let lo_hits = _mm256_shuffle_epi8(lo_bytes, lo_chunk);
+        let lo_hits = _mm256_shuffle_epi8(LO_BYTES, lo_chunk);
 
         let hi_chunk = _mm256_and_si256(_mm256_srli_epi16(chunk, 4), _mm256_set1_epi8(0xF));
-        let hi_hits = _mm256_shuffle_epi8(hi_bytes, hi_chunk);
+        let hi_hits = _mm256_shuffle_epi8(HI_BYTES, hi_chunk);
 
         let hits = _mm256_and_si256(lo_hits, hi_hits);
 
