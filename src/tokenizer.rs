@@ -378,25 +378,12 @@ impl<'input> Tokenizer<'input> {
     fn parse_name(&mut self) -> Result<&'input str> {
         let mut pos = 0;
 
-        #[cfg(not(all(
-            target_arch = "x86_64",
-            any(target_feature = "ssse3", target_feature = "avx2")
-        )))]
-        parse_name_impl(self.text, &mut pos)?;
-
-        #[allow(unsafe_code)]
-        #[cfg(all(
-            target_arch = "x86_64",
-            all(target_feature = "ssse3", not(target_feature = "avx2"))
-        ))]
-        unsafe {
-            parse_name_impl_ssse3(self.text, &mut pos)?;
-        }
-
-        #[allow(unsafe_code)]
-        #[cfg(all(target_arch = "x86_64", target_feature = "avx2"))]
-        unsafe {
-            parse_name_impl_avx2(self.text, &mut pos)?;
+        loop {
+            match self.text.as_bytes().get(pos) {
+                Some(b'=' | b'/' | b'>' | b' ' | b'\t' | b'\r' | b'\n') => break,
+                Some(_) => pos += 1,
+                None => return ErrorKind::InvalidName.into(),
+            }
         }
 
         let (name, rest) = self.text.split_at(pos);
@@ -410,10 +397,38 @@ impl<'input> Tokenizer<'input> {
     }
 
     fn parse_qualname(&mut self) -> Result<(Option<&'input str>, &'input str)> {
-        let qualname = self.parse_name()?;
+        let mut pos = 0;
+        let mut prefix_pos = None;
 
-        let (prefix, local) = match split_once(qualname, b':') {
-            Some((prefix, local)) => {
+        #[cfg(not(all(
+            target_arch = "x86_64",
+            any(target_feature = "ssse3", target_feature = "avx2")
+        )))]
+        parse_qualname_impl(self.text, &mut pos, &mut prefix_pos)?;
+
+        #[allow(unsafe_code)]
+        #[cfg(all(
+            target_arch = "x86_64",
+            all(target_feature = "ssse3", not(target_feature = "avx2"))
+        ))]
+        unsafe {
+            parse_qualname_impl_ssse3(self.text, &mut pos, &mut prefix_pos)?;
+        }
+
+        #[allow(unsafe_code)]
+        #[cfg(all(target_arch = "x86_64", target_feature = "avx2"))]
+        unsafe {
+            parse_qualname_impl_avx2(self.text, &mut pos, &mut prefix_pos)?;
+        }
+
+        let (qualname, rest) = self.text.split_at(pos);
+        self.text = rest;
+
+        let (prefix, local) = match prefix_pos {
+            Some(prefix_pos) => {
+                let prefix = &qualname[..prefix_pos];
+                let local = &qualname[prefix_pos + 1..];
+
                 if prefix.is_empty() || local.is_empty() {
                     return ErrorKind::InvalidName.into();
                 }
@@ -547,10 +562,15 @@ impl<'input> Tokenizer<'input> {
     )),
     inline(always)
 )]
-fn parse_name_impl(text: &str, pos: &mut usize) -> Result {
+fn parse_qualname_impl(text: &str, pos: &mut usize, prefix_pos: &mut Option<usize>) -> Result {
     loop {
         match text.as_bytes().get(*pos) {
             Some(b'=' | b'/' | b'>' | b' ' | b'\t' | b'\r' | b'\n') => return Ok(()),
+            Some(b':') => {
+                *prefix_pos = Some(*pos);
+
+                *pos += 1;
+            }
             Some(_) => *pos += 1,
             None => return ErrorKind::InvalidName.into(),
         }
@@ -564,10 +584,14 @@ fn parse_name_impl(text: &str, pos: &mut usize) -> Result {
     target_arch = "x86_64",
     all(target_feature = "ssse3", not(target_feature = "avx2"))
 ))]
-unsafe fn parse_name_impl_ssse3(text: &str, pos: &mut usize) -> Result {
+unsafe fn parse_qualname_impl_ssse3(
+    text: &str,
+    pos: &mut usize,
+    prefix_pos: &mut Option<usize>,
+) -> Result {
     use std::arch::x86_64::*;
 
-    const BYTES: [u8; 7] = [b'=', b'/', b'>', b' ', b'\t', b'\r', b'\n'];
+    const BYTES: [u8; 8] = [b'=', b'/', b'>', b' ', b'\t', b'\r', b'\n', b':'];
 
     #[repr(align(16))]
     struct AlignedTable([u8; 16]);
@@ -616,28 +640,52 @@ unsafe fn parse_name_impl_ssse3(text: &str, pos: &mut usize) -> Result {
 
         let hits = _mm_and_si128(lo_hits, hi_hits);
 
-        let mask = _mm_movemask_epi8(_mm_cmpeq_epi8(hits, _mm_set1_epi8(0))) as u32;
+        let mask = _mm_cmpeq_epi8(hits, _mm_set1_epi8(0));
+        let cl_mask = _mm_cmpeq_epi8(hits, _mm_set1_epi8(1 << 7));
+
+        let mask = _mm_xor_si128(mask, cl_mask);
+
+        let mask = _mm_movemask_epi8(mask) as u32;
+        let cl_mask = _mm_movemask_epi8(cl_mask) as u32;
 
         if mask != 0xFF_FF {
-            *pos += mask.trailing_ones() as usize;
+            let off = mask.trailing_ones() as usize;
+
+            if cl_mask != 0 {
+                let cl_off = cl_mask.trailing_zeros() as usize;
+
+                if cl_off < off {
+                    *prefix_pos = Some(*pos + cl_off);
+                }
+            }
+
+            *pos += off;
 
             return Ok(());
+        }
+
+        if cl_mask != 0 {
+            *prefix_pos = Some(*pos + cl_mask.trailing_zeros() as usize);
         }
 
         *pos += 16;
     }
 
-    parse_name_impl(text, pos)
+    parse_qualname_impl(text, pos, prefix_pos)
 }
 
 #[inline]
 #[allow(unsafe_code)]
 #[target_feature(enable = "avx2")]
 #[cfg(all(target_arch = "x86_64", target_feature = "avx2"))]
-unsafe fn parse_name_impl_avx2(text: &str, pos: &mut usize) -> Result {
+unsafe fn parse_qualname_impl_avx2(
+    text: &str,
+    pos: &mut usize,
+    prefix_pos: &mut Option<usize>,
+) -> Result {
     use std::arch::x86_64::*;
 
-    const BYTES: [u8; 7] = [b'=', b'/', b'>', b' ', b'\t', b'\r', b'\n'];
+    const BYTES: [u8; 8] = [b'=', b'/', b'>', b' ', b'\t', b'\r', b'\n', b':'];
 
     #[repr(align(32))]
     struct AlignedTable([u8; 32]);
@@ -688,16 +736,36 @@ unsafe fn parse_name_impl_avx2(text: &str, pos: &mut usize) -> Result {
 
         let hits = _mm256_and_si256(lo_hits, hi_hits);
 
-        let mask = _mm256_movemask_epi8(_mm256_cmpeq_epi8(hits, _mm256_set1_epi8(0))) as u32;
+        let mask = _mm256_cmpeq_epi8(hits, _mm256_set1_epi8(0));
+        let cl_mask = _mm256_cmpeq_epi8(hits, _mm256_set1_epi8(1 << 7));
+
+        let mask = _mm256_xor_si256(mask, cl_mask);
+
+        let mask = _mm256_movemask_epi8(mask) as u32;
+        let cl_mask = _mm256_movemask_epi8(cl_mask) as u32;
 
         if mask != 0xFF_FF_FF_FF {
-            *pos += mask.trailing_ones() as usize;
+            let off = mask.trailing_ones() as usize;
+
+            if cl_mask != 0 {
+                let cl_off = cl_mask.trailing_zeros() as usize;
+
+                if cl_off < off {
+                    *prefix_pos = Some(*pos + cl_off);
+                }
+            }
+
+            *pos += off;
 
             return Ok(());
+        }
+
+        if cl_mask != 0 {
+            *prefix_pos = Some(*pos + cl_mask.trailing_zeros() as usize);
         }
 
         *pos += 32;
     }
 
-    parse_name_impl(text, pos)
+    parse_qualname_impl(text, pos, prefix_pos)
 }
