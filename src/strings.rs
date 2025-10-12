@@ -253,14 +253,26 @@ pub(crate) fn split_first<const N: usize>(str_: &str, bytes: [u8; N]) -> Option<
 }
 
 #[inline]
-pub(crate) fn split_once(str_: &str, delim: u8) -> Option<(&str, &str)> {
+pub(crate) fn split_until(str_: &str, end: u8) -> (&str, &str) {
+    assert!(end.is_ascii());
+
+    let pos = memchr(end, str_.as_bytes()).unwrap_or(str_.len());
+
+    // SAFETY: `end` is an ASCII character hence at a character boundary.
+    let before = unsafe { str_.get_unchecked(..pos) };
+    let after = unsafe { str_.get_unchecked(pos..) };
+
+    (before, after)
+}
+
+#[inline]
+pub(crate) fn split_around(str_: &str, delim: u8) -> Option<(&str, &str)> {
     assert!(delim.is_ascii());
 
     let pos = memchr(delim, str_.as_bytes())?;
 
-    // SAFETY: `delim` is a ASCII character hence preceeded by a character boundary.
+    // SAFETY: `delim` is an ASCII character hence surrounded by character boundaries.
     let before = unsafe { str_.get_unchecked(..pos) };
-    // SAFETY: `delim` is a ASCII character hence followed by a character boundary.
     let after = unsafe { str_.get_unchecked(pos + 1..) };
 
     Some((before, after))

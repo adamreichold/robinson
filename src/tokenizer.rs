@@ -5,7 +5,7 @@ use memchr::memmem::Finder;
 use crate::{
     error::{Error, ErrorKind, Result},
     parser::Parser,
-    strings::{memchr, split_first, split_once},
+    strings::{split_around, split_first, split_until},
 };
 
 pub(crate) struct Tokenizer<'input> {
@@ -356,9 +356,7 @@ impl<'input> Tokenizer<'input> {
     fn parse_text(&mut self, parser: &mut Parser<'input>) -> Result {
         debug_assert!(!self.text.is_empty());
 
-        let pos = memchr(b'<', self.text.as_bytes()).unwrap_or(self.text.len());
-
-        let (text, rest) = self.text.split_at(pos);
+        let (text, rest) = split_until(self.text, b'<');
         self.text = rest;
 
         parser.append_text(self, text)
@@ -451,7 +449,7 @@ impl<'input> Tokenizer<'input> {
     fn parse_quoted(&mut self) -> Result<&'input str> {
         let quote = self.expect_quote()?;
 
-        let Some((quoted, rest)) = split_once(self.text, quote) else {
+        let Some((quoted, rest)) = split_around(self.text, quote) else {
             return ErrorKind::ExpectedQuote.into();
         };
         self.text = rest;
@@ -516,7 +514,7 @@ impl<'input> Tokenizer<'input> {
     }
 
     pub(crate) fn parse_reference(&mut self) -> Result<Reference<'input>> {
-        let Some((value, rest)) = split_once(self.text, b';') else {
+        let Some((value, rest)) = split_around(self.text, b';') else {
             return ErrorKind::ExpectedLiteral(";").into();
         };
         self.text = rest;
