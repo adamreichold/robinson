@@ -6,7 +6,8 @@ use crate::{
     error::{ErrorKind, Result},
     nodes::{ElementData, NodeData, NodeId},
     strings::{
-        StringBuf, StringsBuilder, cmp_names, cmp_opt_names, memchr, memchr_count, memchr2, memchr3,
+        StringBuf, StringsBuilder, cmp_names, cmp_opt_names, memchr, memchr2, memchr2_count,
+        memchr3,
     },
     tokenizer::{Reference, Tokenizer},
 };
@@ -60,8 +61,7 @@ struct Entity<'input> {
 
 impl<'input> Parser<'input> {
     fn new(text: &'input str) -> Result<Self> {
-        let nodes = memchr_count(b'<', text.as_bytes());
-        let attributes = memchr_count(b'=', text.as_bytes());
+        let (nodes, attributes) = memchr2_count(b'<', b'=', text.as_bytes());
 
         let mut doc = DocumentBuilder {
             nodes: Vec::with_capacity(nodes),
