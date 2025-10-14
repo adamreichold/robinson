@@ -1,5 +1,3 @@
-#![allow(unsafe_code)]
-
 use std::mem::take;
 
 use crate::{
@@ -14,6 +12,7 @@ pub(crate) struct Strings<'input> {
 }
 
 impl<'input> Strings<'input> {
+    #[allow(unsafe_code)]
     pub(crate) fn get(&self, id: NodeId) -> &str {
         // SAFETY: All entries in `vals` are valid ranges into
         // `text` or `buf`, depending on their tag.
@@ -77,6 +76,7 @@ impl<'input> StringsBuilder<'input> {
         }
     }
 
+    #[allow(unsafe_code)]
     pub(crate) fn get(&self, id: NodeId) -> &str {
         // SAFETY: All entries in `vals` are valid ranges into
         // `text` or `buf`, depending on their tag.
@@ -105,6 +105,7 @@ impl<'input> StringsBuilder<'input> {
 
 const TAG: u32 = 1 << (u32::BITS - 1);
 
+#[allow(unsafe_code)]
 unsafe fn get<'a>(val: (u32, u32), text: &'a str, buf: &'a str) -> &'a str {
     let pos = val.0 as usize;
 
@@ -164,205 +165,6 @@ impl<'doc, 'input> StringBuf<'doc, 'input> {
 
         Ok(id)
     }
-}
-
-#[inline]
-pub(crate) fn memchr(needle: u8, haystack: &[u8]) -> Option<usize> {
-    #[cfg(all(target_arch = "x86_64", target_feature = "avx2"))]
-    let pos =
-        unsafe { memchr::arch::x86_64::avx2::memchr::One::new_unchecked(needle).find(haystack) };
-
-    #[cfg(all(target_arch = "x86_64", not(target_feature = "avx2")))]
-    let pos =
-        unsafe { memchr::arch::x86_64::sse2::memchr::One::new_unchecked(needle).find(haystack) };
-
-    #[cfg(not(target_arch = "x86_64"))]
-    let pos = memchr::arch::all::memchr::One::new(needle).find(haystack);
-
-    pos
-}
-
-#[inline]
-pub(crate) fn memchr2(needle1: u8, needle2: u8, haystack: &[u8]) -> Option<usize> {
-    #[cfg(all(target_arch = "x86_64", target_feature = "avx2"))]
-    let pos = unsafe {
-        memchr::arch::x86_64::avx2::memchr::Two::new_unchecked(needle1, needle2).find(haystack)
-    };
-
-    #[cfg(all(target_arch = "x86_64", not(target_feature = "avx2")))]
-    let pos = unsafe {
-        memchr::arch::x86_64::sse2::memchr::Two::new_unchecked(needle1, needle2).find(haystack)
-    };
-
-    #[cfg(not(target_arch = "x86_64"))]
-    let pos = memchr::arch::all::memchr::Two::new(needle1, needle2).find(haystack);
-
-    pos
-}
-
-#[inline]
-pub(crate) fn memchr3(needle1: u8, needle2: u8, needle3: u8, haystack: &[u8]) -> Option<usize> {
-    #[cfg(all(target_arch = "x86_64", target_feature = "avx2"))]
-    let pos = unsafe {
-        memchr::arch::x86_64::avx2::memchr::Three::new_unchecked(needle1, needle2, needle3)
-            .find(haystack)
-    };
-
-    #[cfg(all(target_arch = "x86_64", not(target_feature = "avx2")))]
-    let pos = unsafe {
-        memchr::arch::x86_64::sse2::memchr::Three::new_unchecked(needle1, needle2, needle3)
-            .find(haystack)
-    };
-
-    #[cfg(not(target_arch = "x86_64"))]
-    let pos = memchr::arch::all::memchr::Three::new(needle1, needle2, needle3).find(haystack);
-
-    pos
-}
-
-pub(crate) fn memchr2_count(needle1: u8, needle2: u8, haystack: &[u8]) -> (usize, usize) {
-    let mut count1 = 0;
-    let mut count2 = 0;
-
-    #[cfg(all(target_arch = "x86_64", target_feature = "avx2"))]
-    unsafe {
-        memchr2_count_impl_avx2(needle1, needle2, haystack, &mut count1, &mut count2);
-    }
-
-    #[cfg(all(target_arch = "x86_64", not(target_feature = "avx2")))]
-    unsafe {
-        memchr2_count_impl_sse2(needle1, needle2, haystack, &mut count1, &mut count2);
-    }
-
-    #[cfg(not(target_arch = "x86_64"))]
-    memchr2_count_impl(needle1, needle2, haystack, &mut count1, &mut count2);
-
-    debug_assert_eq!(
-        count1,
-        haystack.iter().filter(|&&byte| byte == needle1).count()
-    );
-
-    debug_assert_eq!(
-        count2,
-        haystack.iter().filter(|&&byte| byte == needle2).count()
-    );
-
-    (count1, count2)
-}
-
-fn memchr2_count_impl(
-    needle1: u8,
-    needle2: u8,
-    haystack: &[u8],
-    count1: &mut usize,
-    count2: &mut usize,
-) {
-    for &byte in haystack {
-        *count1 += (byte == needle1) as usize;
-        *count2 += (byte == needle2) as usize;
-    }
-}
-
-#[inline]
-#[target_feature(enable = "sse2")]
-#[cfg(all(target_arch = "x86_64", not(target_feature = "avx2")))]
-fn memchr2_count_impl_sse2(
-    needle1: u8,
-    needle2: u8,
-    haystack: &[u8],
-    count1: &mut usize,
-    count2: &mut usize,
-) {
-    use std::arch::x86_64::*;
-
-    let (prefix, aligned, suffix) = unsafe { haystack.align_to::<__m128i>() };
-
-    memchr2_count_impl(needle1, needle2, prefix, count1, count2);
-
-    let splat1 = _mm_set1_epi8(needle1 as i8);
-    let splat2 = _mm_set1_epi8(needle2 as i8);
-
-    for &chunk in aligned {
-        let hits1 = _mm_movemask_epi8(_mm_cmpeq_epi8(chunk, splat1));
-        let hits2 = _mm_movemask_epi8(_mm_cmpeq_epi8(chunk, splat2));
-
-        *count1 += hits1.count_ones() as usize;
-        *count2 += hits2.count_ones() as usize;
-    }
-
-    memchr2_count_impl(needle1, needle2, suffix, count1, count2);
-}
-
-#[inline]
-#[target_feature(enable = "avx2")]
-#[cfg(all(target_arch = "x86_64", target_feature = "avx2"))]
-fn memchr2_count_impl_avx2(
-    needle1: u8,
-    needle2: u8,
-    haystack: &[u8],
-    count1: &mut usize,
-    count2: &mut usize,
-) {
-    use std::arch::x86_64::*;
-
-    let (prefix, aligned, suffix) = unsafe { haystack.align_to::<__m256i>() };
-
-    memchr2_count_impl(needle1, needle2, prefix, count1, count2);
-
-    let splat1 = _mm256_set1_epi8(needle1 as i8);
-    let splat2 = _mm256_set1_epi8(needle2 as i8);
-
-    for &chunk in aligned {
-        let hits1 = _mm256_movemask_epi8(_mm256_cmpeq_epi8(chunk, splat1));
-        let hits2 = _mm256_movemask_epi8(_mm256_cmpeq_epi8(chunk, splat2));
-
-        *count1 += hits1.count_ones() as usize;
-        *count2 += hits2.count_ones() as usize;
-    }
-
-    memchr2_count_impl(needle1, needle2, suffix, count1, count2);
-}
-
-#[inline]
-pub(crate) fn split_first<const N: usize>(str_: &str, bytes: [u8; N]) -> Option<(u8, &str)> {
-    assert!(bytes.is_ascii());
-
-    if let Some(&first) = str_.as_bytes().first()
-        && bytes.contains(&first)
-    {
-        // SAFETY: `first` is a ASCII character, hence followed by a character boundary.
-        let rest = unsafe { str_.get_unchecked(1..) };
-
-        return Some((first, rest));
-    }
-
-    None
-}
-
-#[inline]
-pub(crate) fn split_at(str_: &str, delim: u8) -> (&str, &str) {
-    assert!(delim.is_ascii());
-
-    let pos = memchr(delim, str_.as_bytes()).unwrap_or(str_.len());
-
-    // SAFETY: `delim` is an ASCII character, hence preceeded by character boundary.
-    let before = unsafe { str_.get_unchecked(..pos) };
-    let after = unsafe { str_.get_unchecked(pos..) };
-
-    (before, after)
-}
-
-#[inline]
-pub(crate) fn split_after(str_: &str, delim: u8) -> Option<(&str, &str)> {
-    assert!(delim.is_ascii());
-
-    let pos = memchr(delim, str_.as_bytes())?;
-
-    // SAFETY: `delim` is an ASCII character, hence surrounded by character boundaries.
-    let before = unsafe { str_.get_unchecked(..pos) };
-    let after = unsafe { str_.get_unchecked(pos + 1..) };
-
-    Some((before, after))
 }
 
 pub(crate) fn cmp_names(lhs: &str, rhs: &str) -> bool {
