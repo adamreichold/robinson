@@ -1,20 +1,15 @@
 use std::mem::swap;
 
-use memchr::memmem::Finder;
-
 use crate::{
     error::{Error, ErrorKind, Result},
+    memchr::{split_after, split_after_n, split_at, split_first},
     parser::Parser,
-    strings::{split_after, split_at, split_first},
 };
 
 pub(crate) struct Tokenizer<'input> {
     text: &'input str,
     init_text: &'input str,
     element_depth: u16,
-    pi: Finder<'static>,
-    comment: Finder<'static>,
-    cdata: Finder<'static>,
 }
 
 #[derive(Clone, Copy)]
@@ -29,9 +24,6 @@ impl<'input> Tokenizer<'input> {
             text,
             init_text: text,
             element_depth: 0,
-            pi: Finder::new(b"?>"),
-            comment: Finder::new(b"-->"),
-            cdata: Finder::new(b"]]>"),
         }
     }
 
@@ -330,11 +322,10 @@ impl<'input> Tokenizer<'input> {
     }
 
     fn parse_comment(&mut self) -> Result {
-        let Some(pos) = self.comment.find(self.text.as_bytes()) else {
+        let Some((_comment, rest)) = split_after_n(self.text, *b"-->") else {
             return ErrorKind::ExpectedLiteral("-->").into();
         };
-
-        self.text = &self.text[pos + 3..];
+        self.text = rest;
 
         Ok(())
     }
@@ -344,11 +335,10 @@ impl<'input> Tokenizer<'input> {
 
         self.try_space();
 
-        let Some(pos) = self.pi.find(self.text.as_bytes()) else {
+        let Some((_pi, rest)) = split_after_n(self.text, *b"?>") else {
             return ErrorKind::ExpectedLiteral("?>").into();
         };
-
-        self.text = &self.text[pos + 2..];
+        self.text = rest;
 
         Ok(())
     }
@@ -363,12 +353,10 @@ impl<'input> Tokenizer<'input> {
     }
 
     fn parse_cdata(&mut self, parser: &mut Parser<'input>) -> Result {
-        let Some(pos) = self.cdata.find(self.text.as_bytes()) else {
+        let Some((cdata, rest)) = split_after_n(self.text, *b"]]>") else {
             return ErrorKind::ExpectedLiteral("]]>").into();
         };
-
-        let (cdata, rest) = self.text.split_at(pos);
-        self.text = &rest[3..];
+        self.text = rest;
 
         parser.append_cdata(cdata)
     }
@@ -405,20 +393,14 @@ impl<'input> Tokenizer<'input> {
         )))]
         parse_qualname_impl(self.text, &mut pos, &mut prefix_pos)?;
 
-        // SAFETY: Conditional compilation ensures that the `ssse3` target feature is available.
         #[cfg(all(
             target_arch = "x86_64",
             all(target_feature = "ssse3", not(target_feature = "avx2"))
         ))]
-        unsafe {
-            parse_qualname_impl_ssse3(self.text, &mut pos, &mut prefix_pos)?;
-        }
+        parse_qualname_impl_ssse3(self.text, &mut pos, &mut prefix_pos)?;
 
-        // SAFETY: Conditional compilation ensures that the `avx2` target feature is available.
         #[cfg(all(target_arch = "x86_64", target_feature = "avx2"))]
-        unsafe {
-            parse_qualname_impl_avx2(self.text, &mut pos, &mut prefix_pos)?;
-        }
+        parse_qualname_impl_avx2(self.text, &mut pos, &mut prefix_pos)?;
 
         // SAFETY: `parse_qualname_impl*` guarantees an ASCII character at `pos`.
         let qualname = unsafe { self.text.get_unchecked(..pos) };
@@ -582,14 +564,13 @@ fn parse_qualname_impl(text: &str, pos: &mut usize, prefix_pos: &mut Option<usiz
     }
 }
 
-#[inline]
+#[inline(always)]
 #[allow(unsafe_code)]
-#[target_feature(enable = "ssse3")]
 #[cfg(all(
     target_arch = "x86_64",
     all(target_feature = "ssse3", not(target_feature = "avx2"))
 ))]
-unsafe fn parse_qualname_impl_ssse3(
+fn parse_qualname_impl_ssse3(
     text: &str,
     pos: &mut usize,
     prefix_pos: &mut Option<usize>,
@@ -641,57 +622,55 @@ unsafe fn parse_qualname_impl_ssse3(
         // SAFETY: While unaligned, `chunks_exact` ensures 16 bytes of valid data.
         let chunk = unsafe { _mm_loadu_si128(chunk.as_ptr() as *const __m128i) };
 
-        let lo_chunk = _mm_and_si128(chunk, _mm_set1_epi8(0xF));
-        let lo_hits = _mm_shuffle_epi8(LO_BYTES, lo_chunk);
+        // SAFETY: Conditional compilation ensures that the `ssse3` target feature is available.
+        unsafe {
+            let lo_chunk = _mm_and_si128(chunk, _mm_set1_epi8(0xF));
+            let lo_hits = _mm_shuffle_epi8(LO_BYTES, lo_chunk);
 
-        let hi_chunk = _mm_and_si128(_mm_srli_epi16(chunk, 4), _mm_set1_epi8(0xF));
-        let hi_hits = _mm_shuffle_epi8(HI_BYTES, hi_chunk);
+            let hi_chunk = _mm_and_si128(_mm_srli_epi16(chunk, 4), _mm_set1_epi8(0xF));
+            let hi_hits = _mm_shuffle_epi8(HI_BYTES, hi_chunk);
 
-        let hits = _mm_and_si128(lo_hits, hi_hits);
+            let hits = _mm_and_si128(lo_hits, hi_hits);
 
-        let mask = _mm_cmpeq_epi8(hits, _mm_set1_epi8(0));
-        let cl_mask = _mm_cmpeq_epi8(hits, _mm_set1_epi8(1 << 7));
+            let mask = _mm_cmpeq_epi8(hits, _mm_set1_epi8(0));
+            let cl_mask = _mm_cmpeq_epi8(hits, _mm_set1_epi8(1 << 7));
 
-        let mask = _mm_xor_si128(mask, cl_mask);
+            let mask = _mm_xor_si128(mask, cl_mask);
 
-        let mask = _mm_movemask_epi8(mask) as u32;
-        let cl_mask = _mm_movemask_epi8(cl_mask) as u32;
+            let mask = _mm_movemask_epi8(mask) as u32;
+            let cl_mask = _mm_movemask_epi8(cl_mask) as u32;
 
-        if mask != 0xFF_FF {
-            let off = mask.trailing_ones() as usize;
+            if mask != 0xFF_FF {
+                let off = mask.trailing_ones() as usize;
 
-            if cl_mask != 0 {
-                let cl_off = cl_mask.trailing_zeros() as usize;
+                if cl_mask != 0 {
+                    let cl_off = cl_mask.trailing_zeros() as usize;
 
-                if cl_off < off {
-                    *prefix_pos = Some(*pos + cl_off);
+                    if cl_off < off {
+                        *prefix_pos = Some(*pos + cl_off);
+                    }
                 }
+
+                *pos += off;
+
+                return Ok(());
             }
 
-            *pos += off;
+            if cl_mask != 0 {
+                *prefix_pos = Some(*pos + cl_mask.trailing_zeros() as usize);
+            }
 
-            return Ok(());
+            *pos += 16;
         }
-
-        if cl_mask != 0 {
-            *prefix_pos = Some(*pos + cl_mask.trailing_zeros() as usize);
-        }
-
-        *pos += 16;
     }
 
     parse_qualname_impl(text, pos, prefix_pos)
 }
 
-#[inline]
+#[inline(always)]
 #[allow(unsafe_code)]
-#[target_feature(enable = "avx2")]
 #[cfg(all(target_arch = "x86_64", target_feature = "avx2"))]
-unsafe fn parse_qualname_impl_avx2(
-    text: &str,
-    pos: &mut usize,
-    prefix_pos: &mut Option<usize>,
-) -> Result {
+fn parse_qualname_impl_avx2(text: &str, pos: &mut usize, prefix_pos: &mut Option<usize>) -> Result {
     use std::arch::x86_64::*;
     use std::mem::transmute;
 
@@ -741,43 +720,46 @@ unsafe fn parse_qualname_impl_avx2(
         // SAFETY: While unaligned, `chunks_exact` ensures 32 bytes of valid data.
         let chunk = unsafe { _mm256_loadu_si256(chunk.as_ptr() as *const __m256i) };
 
-        let lo_chunk = _mm256_and_si256(chunk, _mm256_set1_epi8(0xF));
-        let lo_hits = _mm256_shuffle_epi8(LO_BYTES, lo_chunk);
+        // SAFETY: Conditional compilation ensures that the `avx2` target feature is available.
+        unsafe {
+            let lo_chunk = _mm256_and_si256(chunk, _mm256_set1_epi8(0xF));
+            let lo_hits = _mm256_shuffle_epi8(LO_BYTES, lo_chunk);
 
-        let hi_chunk = _mm256_and_si256(_mm256_srli_epi16(chunk, 4), _mm256_set1_epi8(0xF));
-        let hi_hits = _mm256_shuffle_epi8(HI_BYTES, hi_chunk);
+            let hi_chunk = _mm256_and_si256(_mm256_srli_epi16(chunk, 4), _mm256_set1_epi8(0xF));
+            let hi_hits = _mm256_shuffle_epi8(HI_BYTES, hi_chunk);
 
-        let hits = _mm256_and_si256(lo_hits, hi_hits);
+            let hits = _mm256_and_si256(lo_hits, hi_hits);
 
-        let mask = _mm256_cmpeq_epi8(hits, _mm256_set1_epi8(0));
-        let cl_mask = _mm256_cmpeq_epi8(hits, _mm256_set1_epi8(1 << 7));
+            let mask = _mm256_cmpeq_epi8(hits, _mm256_set1_epi8(0));
+            let cl_mask = _mm256_cmpeq_epi8(hits, _mm256_set1_epi8(1 << 7));
 
-        let mask = _mm256_xor_si256(mask, cl_mask);
+            let mask = _mm256_xor_si256(mask, cl_mask);
 
-        let mask = _mm256_movemask_epi8(mask) as u32;
-        let cl_mask = _mm256_movemask_epi8(cl_mask) as u32;
+            let mask = _mm256_movemask_epi8(mask) as u32;
+            let cl_mask = _mm256_movemask_epi8(cl_mask) as u32;
 
-        if mask != 0xFF_FF_FF_FF {
-            let off = mask.trailing_ones() as usize;
+            if mask != 0xFF_FF_FF_FF {
+                let off = mask.trailing_ones() as usize;
 
-            if cl_mask != 0 {
-                let cl_off = cl_mask.trailing_zeros() as usize;
+                if cl_mask != 0 {
+                    let cl_off = cl_mask.trailing_zeros() as usize;
 
-                if cl_off < off {
-                    *prefix_pos = Some(*pos + cl_off);
+                    if cl_off < off {
+                        *prefix_pos = Some(*pos + cl_off);
+                    }
                 }
+
+                *pos += off;
+
+                return Ok(());
             }
 
-            *pos += off;
+            if cl_mask != 0 {
+                *prefix_pos = Some(*pos + cl_mask.trailing_zeros() as usize);
+            }
 
-            return Ok(());
+            *pos += 32;
         }
-
-        if cl_mask != 0 {
-            *prefix_pos = Some(*pos + cl_mask.trailing_zeros() as usize);
-        }
-
-        *pos += 32;
     }
 
     parse_qualname_impl(text, pos, prefix_pos)

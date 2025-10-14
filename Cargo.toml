@@ -9,7 +9,7 @@ readme = "README.md"
 exclude = ["benches"]
 repository = "https://github.com/adamreichold/robinson"
 license = "MIT OR Apache-2.0"
-version = "0.5.9"
+version = "0.5.10"
 edition = "2024"
 
 [features]
@@ -17,7 +17,6 @@ serde = ["dep:serde_core"]
 raw-node = ["serde"]
 
 [dependencies]
-memchr = "2"
 serde_core = { version = "1", optional = true }
 
 [dev-dependencies]

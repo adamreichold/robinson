@@ -4,11 +4,9 @@ use crate::{
     Document, DocumentBuilder, NameData,
     attributes::AttributeData,
     error::{ErrorKind, Result},
+    memchr::{memchr, memchr2, memchr2_count, memchr3},
     nodes::{ElementData, NodeData, NodeId},
-    strings::{
-        StringBuf, StringsBuilder, cmp_names, cmp_opt_names, memchr, memchr2, memchr2_count,
-        memchr3,
-    },
+    strings::{StringBuf, StringsBuilder, cmp_names, cmp_opt_names},
     tokenizer::{Reference, Tokenizer},
 };
 

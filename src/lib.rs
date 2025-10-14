@@ -7,6 +7,7 @@
 
 mod attributes;
 mod error;
+mod memchr;
 mod namespaces;
 mod nodes;
 mod parser;
