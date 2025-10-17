@@ -129,10 +129,6 @@ impl<'input> Tokenizer<'input> {
         self.try_literal("\u{FEFF}");
         self.try_space();
 
-        if self.try_literal("<?xml") {
-            self.parse_declaration()?;
-        }
-
         self.parse_miscellaneous()?;
 
         if self.try_literal("<!DOCTYPE") {
@@ -160,39 +156,6 @@ impl<'input> Tokenizer<'input> {
         }
 
         Ok(())
-    }
-
-    #[cold]
-    fn parse_declaration(&mut self) -> Result {
-        self.expect_space()?;
-
-        let (prefix, local, _value) = self.parse_attribute()?;
-        if prefix.is_some() || local != "version" {
-            return ErrorKind::ExpectedLiteral("version").into();
-        }
-
-        self.try_space();
-        if self.try_literal("?>") {
-            return Ok(());
-        }
-
-        let (prefix, local, _value) = self.parse_attribute()?;
-        if prefix.is_some() || local != "encoding" {
-            return ErrorKind::ExpectedLiteral("encoding").into();
-        }
-
-        self.try_space();
-        if self.try_literal("?>") {
-            return Ok(());
-        }
-
-        let (prefix, local, _value) = self.parse_attribute()?;
-        if prefix.is_some() || local != "standalone" {
-            return ErrorKind::ExpectedLiteral("standalone").into();
-        }
-
-        self.try_space();
-        self.expect_literal("?>")
     }
 
     #[cold]

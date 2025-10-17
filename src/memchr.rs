@@ -61,7 +61,7 @@ pub(crate) fn split_after_n<const N: usize>(
         if after.as_bytes().starts_with(&delim) {
             // SAFETY: All of `delim` are ASCII characters, hence surrounded by character boundaries.
             let before = unsafe { text.get_unchecked(..pos) };
-            let after = unsafe { after.get_unchecked(3..) };
+            let after = unsafe { after.get_unchecked(N..) };
 
             return Some((before, after));
         } else {
@@ -232,10 +232,6 @@ where
         // and `align_to` ensures sufficient alignment.
         let (_prefix, aligned, suffix) = unsafe { haystack.align_to::<__m128i>() };
 
-        if aligned.is_empty() {
-            return None;
-        }
-
         let rest = if N == 4 {
             let (chunks, rest) = aligned.as_chunks::<4>();
 
@@ -403,11 +399,11 @@ where
                 }
 
                 let mask1 = _mm_movemask_epi8(mask1);
-                return Some(pos + mask1.trailing_zeros() as usize);
+                Some(pos + mask1.trailing_zeros() as usize)
+            } else {
+                None
             }
         }
-
-        None
     }
 
     #[inline(always)]
@@ -436,10 +432,6 @@ where
         // SAFETY: The representation of `__m256i` is equivalent to `[u8; 32]`
         // and `align_to` ensures sufficient alignment.
         let (_prefix, aligned, suffix) = unsafe { haystack.align_to::<__m256i>() };
-
-        if aligned.is_empty() {
-            return None;
-        }
 
         let rest = if N == 4 {
             let (chunks, rest) = aligned.as_chunks::<4>();
