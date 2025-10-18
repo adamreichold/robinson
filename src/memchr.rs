@@ -80,24 +80,25 @@ pub(crate) fn memchr(needle: u8, haystack: &[u8]) -> Option<usize> {
 #[inline]
 #[cfg(target_arch = "x86_64")]
 pub(crate) fn memchr(needle: u8, haystack: &[u8]) -> Option<usize> {
-    memchr_impl(
-        haystack,
-        Unroll::<4>,
-        move |byte| byte == needle,
-        // SAFETY: Conditional compilation ensures that at least the `sse2` target feature is available
-        unsafe {
-            let needle = _mm_set1_epi8(needle as i8);
+    #[derive(Clone, Copy)]
+    struct One(u8);
 
-            move |chunk| _mm_cmpeq_epi8(chunk, needle)
-        },
-        // SAFETY: `memchr_impl` will call this code only if the `avx2` target feature is available.
-        #[cfg(target_feature = "avx2")]
-        unsafe {
-            let needle = _mm256_set1_epi8(needle as i8);
+    impl Needle for One {
+        #[inline(always)]
+        fn cmp_byte(self, byte: u8) -> bool {
+            byte == self.0
+        }
 
-            move |chunk| _mm256_cmpeq_epi8(chunk, needle)
-        },
-    )
+        #[inline(always)]
+        fn cmp_chunk<M>(self, chunk: M) -> M
+        where
+            M: Simd,
+        {
+            chunk.compare(M::splat(self.0))
+        }
+    }
+
+    memchr_impl(haystack, Unroll::<4>, One(needle))
 }
 
 #[inline]
@@ -111,36 +112,28 @@ pub(crate) fn memchr2(needle1: u8, needle2: u8, haystack: &[u8]) -> Option<usize
 #[inline]
 #[cfg(target_arch = "x86_64")]
 pub(crate) fn memchr2(needle1: u8, needle2: u8, haystack: &[u8]) -> Option<usize> {
-    memchr_impl(
-        haystack,
-        Unroll::<2>,
-        move |byte| byte == needle1 || byte == needle2,
-        // SAFETY: Conditional compilation ensures that at least the `sse2` target feature is available
-        unsafe {
-            let needle1 = _mm_set1_epi8(needle1 as i8);
-            let needle2 = _mm_set1_epi8(needle2 as i8);
+    #[derive(Clone, Copy)]
+    struct Two(u8, u8);
 
-            move |chunk| {
-                let mask1 = _mm_cmpeq_epi8(chunk, needle1);
-                let mask2 = _mm_cmpeq_epi8(chunk, needle2);
+    impl Needle for Two {
+        #[inline(always)]
+        fn cmp_byte(self, byte: u8) -> bool {
+            byte == self.0 || byte == self.1
+        }
 
-                _mm_or_si128(mask1, mask2)
-            }
-        },
-        // SAFETY: `memchr_impl` will call this code only if the `avx2` target feature is available.
-        #[cfg(target_feature = "avx2")]
-        unsafe {
-            let needle1 = _mm256_set1_epi8(needle1 as i8);
-            let needle2 = _mm256_set1_epi8(needle2 as i8);
+        #[inline(always)]
+        fn cmp_chunk<M>(self, chunk: M) -> M
+        where
+            M: Simd,
+        {
+            let mask1 = chunk.compare(M::splat(self.0));
+            let mask2 = chunk.compare(M::splat(self.1));
 
-            move |chunk| {
-                let mask1 = _mm256_cmpeq_epi8(chunk, needle1);
-                let mask2 = _mm256_cmpeq_epi8(chunk, needle2);
+            mask1.or(mask2)
+        }
+    }
 
-                _mm256_or_si256(mask1, mask2)
-            }
-        },
-    )
+    memchr_impl(haystack, Unroll::<2>, Two(needle1, needle2))
 }
 
 #[inline]
@@ -154,414 +147,245 @@ pub(crate) fn memchr3(needle1: u8, needle2: u8, needle3: u8, haystack: &[u8]) ->
 #[inline]
 #[cfg(target_arch = "x86_64")]
 pub(crate) fn memchr3(needle1: u8, needle2: u8, needle3: u8, haystack: &[u8]) -> Option<usize> {
-    memchr_impl(
-        haystack,
-        Unroll::<1>,
-        move |byte| byte == needle1 || byte == needle2 || byte == needle3,
-        // SAFETY: Conditional compilation ensures that at least the `sse2` target feature is available
-        unsafe {
-            let needle1 = _mm_set1_epi8(needle1 as i8);
-            let needle2 = _mm_set1_epi8(needle2 as i8);
-            let needle3 = _mm_set1_epi8(needle3 as i8);
+    #[derive(Clone, Copy)]
+    struct Three(u8, u8, u8);
 
-            move |chunk| {
-                let mask1 = _mm_cmpeq_epi8(chunk, needle1);
-                let mask2 = _mm_cmpeq_epi8(chunk, needle2);
-                let mask3 = _mm_cmpeq_epi8(chunk, needle3);
+    impl Needle for Three {
+        #[inline(always)]
+        fn cmp_byte(self, byte: u8) -> bool {
+            byte == self.0 || byte == self.1 || byte == self.2
+        }
 
-                _mm_or_si128(_mm_or_si128(mask1, mask2), mask3)
-            }
-        },
-        // SAFETY: `memchr_impl` will call this code only if the `avx2` target feature is available.
-        #[cfg(target_feature = "avx2")]
-        unsafe {
-            let needle1 = _mm256_set1_epi8(needle1 as i8);
-            let needle2 = _mm256_set1_epi8(needle2 as i8);
-            let needle3 = _mm256_set1_epi8(needle3 as i8);
+        #[inline(always)]
+        fn cmp_chunk<M>(self, chunk: M) -> M
+        where
+            M: Simd,
+        {
+            let mask1 = chunk.compare(M::splat(self.0));
+            let mask2 = chunk.compare(M::splat(self.1));
+            let mask3 = chunk.compare(M::splat(self.2));
 
-            move |chunk| {
-                let mask1 = _mm256_cmpeq_epi8(chunk, needle1);
-                let mask2 = _mm256_cmpeq_epi8(chunk, needle2);
-                let mask3 = _mm256_cmpeq_epi8(chunk, needle3);
+            mask1.or(mask2).or(mask3)
+        }
+    }
 
-                _mm256_or_si256(_mm256_or_si256(mask1, mask2), mask3)
-            }
-        },
-    )
+    memchr_impl(haystack, Unroll::<1>, Three(needle1, needle2, needle3))
+}
+
+trait Needle: Copy {
+    fn cmp_byte(self, byte: u8) -> bool;
+
+    fn cmp_chunk<M>(self, chunk: M) -> M
+    where
+        M: Simd;
 }
 
 #[cfg(target_arch = "x86_64")]
-#[cold]
-#[inline(always)]
-fn cold() {}
-
-#[cfg(target_arch = "x86_64")]
-struct Unroll<const N: usize>;
+struct Unroll<const U: usize>;
 
 #[inline(always)]
 #[cfg(all(target_arch = "x86_64", not(target_feature = "avx2")))]
-fn memchr_impl<const N: usize, F, G>(haystack: &[u8], _: Unroll<N>, f: F, g: G) -> Option<usize>
+fn memchr_impl<const U: usize, N>(haystack: &[u8], _u: Unroll<U>, n: N) -> Option<usize>
 where
-    F: Fn(u8) -> bool,
-    G: Fn(__m128i) -> __m128i + Copy,
+    N: Needle,
 {
-    #[inline(always)]
-    unsafe fn impl_unaligned<G>(haystack: *const u8, g: G) -> Option<usize>
-    where
-        G: Fn(__m128i) -> __m128i,
-    {
-        // SAFETY: `haystack` points to at least 16 bytes of valid data.
-        let chunk = unsafe { _mm_loadu_si128(haystack as *const __m128i) };
-
-        let mask = g(chunk);
-
-        // SAFETY: Conditional compilation ensures that the `sse2` target feature is available.
-        let mask = unsafe { _mm_movemask_epi8(mask) };
-        if mask != 0 {
-            Some(mask.trailing_zeros() as usize)
-        } else {
-            None
-        }
-    }
-
-    fn impl_unrolled<const N: usize, G>(haystack: &[u8], g: G) -> Option<usize>
-    where
-        G: Fn(__m128i) -> __m128i,
-    {
-        // SAFETY: The representation of `__m128i` is equivalent to `[u8; 16]`
-        // and `align_to` ensures sufficient alignment.
-        let (_prefix, aligned, suffix) = unsafe { haystack.align_to::<__m128i>() };
-
-        let rest = if N == 4 {
-            let (chunks, rest) = aligned.as_chunks::<4>();
-
-            for chunks @ [chunk0, chunk1, chunk2, chunk3] in chunks {
-                let mask0 = g(*chunk0);
-                let mask1 = g(*chunk1);
-                let mask2 = g(*chunk2);
-                let mask3 = g(*chunk3);
-
-                // SAFETY: Conditional compilation ensures that the `sse2` target feature is available.
-                unsafe {
-                    let mask01 = _mm_or_si128(mask0, mask1);
-                    let mask23 = _mm_or_si128(mask2, mask3);
-                    let mask = _mm_or_si128(mask01, mask23);
-
-                    if _mm_movemask_epi8(mask) != 0 {
-                        cold();
-
-                        let mut pos = chunks.as_ptr().addr() - haystack.as_ptr().addr();
-
-                        let mask0 = _mm_movemask_epi8(mask0);
-                        if mask0 != 0 {
-                            return Some(pos + mask0.trailing_zeros() as usize);
-                        } else {
-                            pos += 16;
-                        }
-
-                        let mask1 = _mm_movemask_epi8(mask1);
-                        if mask1 != 0 {
-                            return Some(pos + mask1.trailing_zeros() as usize);
-                        } else {
-                            pos += 16;
-                        }
-
-                        let mask2 = _mm_movemask_epi8(mask2);
-                        if mask2 != 0 {
-                            return Some(pos + mask2.trailing_zeros() as usize);
-                        } else {
-                            pos += 16;
-                        }
-
-                        let mask3 = _mm_movemask_epi8(mask3);
-                        return Some(pos + mask3.trailing_zeros() as usize);
-                    }
-                }
-            }
-
-            rest
-        } else if N == 2 {
-            let (chunks, rest) = aligned.as_chunks::<2>();
-
-            for chunks @ [chunk0, chunk1] in chunks {
-                let mask0 = g(*chunk0);
-                let mask1 = g(*chunk1);
-
-                // SAFETY: Conditional compilation ensures that the `sse2` target feature is available.
-                unsafe {
-                    let mask = _mm_or_si128(mask0, mask1);
-
-                    if _mm_movemask_epi8(mask) != 0 {
-                        cold();
-
-                        let mut pos = chunks.as_ptr().addr() - haystack.as_ptr().addr();
-
-                        let mask0 = _mm_movemask_epi8(mask0);
-                        if mask0 != 0 {
-                            return Some(pos + mask0.trailing_zeros() as usize);
-                        } else {
-                            pos += 16;
-                        }
-
-                        let mask1 = _mm_movemask_epi8(mask1);
-                        return Some(pos + mask1.trailing_zeros() as usize);
-                    }
-                }
-            }
-
-            rest
-        } else if N == 1 {
-            aligned
-        } else {
-            unimplemented!()
-        };
-
-        for chunk in rest {
-            let mask = g(*chunk);
-
-            // SAFETY: Conditional compilation ensures that the `avx2` target feature is available.
-            unsafe {
-                let mask = _mm_movemask_epi8(mask);
-                if mask != 0 {
-                    cold();
-
-                    let pos = (chunk as *const __m128i).addr() - haystack.as_ptr().addr();
-
-                    return Some(pos + mask.trailing_zeros() as usize);
-                }
-            }
-        }
-
-        if suffix.is_empty() {
-            return None;
-        }
-
-        // SAFETY: `haystack` points to at least 16 bytes of valid data.
-        unsafe {
-            let pos = suffix.as_ptr().addr() - haystack.as_ptr().addr() + suffix.len() - 16;
-
-            impl_unaligned(haystack.as_ptr().add(pos), g).map(|off| {
-                cold();
-
-                pos + off
-            })
-        }
-    }
-
     if haystack.len() < 16 {
-        return haystack.iter().position(|&byte| f(byte));
+        return haystack.iter().position(move |&byte| n.cmp_byte(byte));
     }
 
     // SAFETY: `haystack` points to at least 16 bytes of valid data.
-    if let Some(pos) = unsafe { impl_unaligned(haystack.as_ptr(), g) } {
+    if let Some(pos) = unsafe { memchr_impl_unaligned::<__m128i, N>(haystack.as_ptr(), n) } {
         return Some(pos);
     }
 
-    impl_unrolled::<N, _>(haystack, g)
+    memchr_impl_unrolled::<U, __m128i, N>(haystack, n)
 }
 
 #[inline(always)]
 #[cfg(all(target_arch = "x86_64", target_feature = "avx2"))]
-fn memchr_impl<const N: usize, F, G, H>(
-    haystack: &[u8],
-    _: Unroll<N>,
-    f: F,
-    g: G,
-    h: H,
-) -> Option<usize>
+fn memchr_impl<const U: usize, N>(haystack: &[u8], _u: Unroll<U>, n: N) -> Option<usize>
 where
-    F: Fn(u8) -> bool,
-    G: Fn(__m128i) -> __m128i,
-    H: Fn(__m256i) -> __m256i + Copy,
+    N: Needle,
 {
-    #[inline(always)]
-    fn impl_sse2<G>(haystack: &[u8], g: G) -> Option<usize>
-    where
-        G: Fn(__m128i) -> __m128i,
-    {
-        let pos = haystack.len() - 16;
-
-        // SAFETY: `haystack` has a length of at least 16 and at most 31 bytes.
-        let chunk0 = unsafe { _mm_loadu_si128(haystack.as_ptr() as *const __m128i) };
-        let chunk1 = unsafe { _mm_loadu_si128(haystack.as_ptr().add(pos) as *const __m128i) };
-
-        let mask0 = g(chunk0);
-        let mask1 = g(chunk1);
-
-        // SAFETY: Conditional compilation ensures that the `avx2` target feature is available.
-        unsafe {
-            let mask = _mm_or_si128(mask0, mask1);
-
-            if _mm_testz_si128(mask, mask) == 0 {
-                let mask0 = _mm_movemask_epi8(mask0);
-                if mask0 != 0 {
-                    return Some(mask0.trailing_zeros() as usize);
-                }
-
-                let mask1 = _mm_movemask_epi8(mask1);
-                Some(pos + mask1.trailing_zeros() as usize)
-            } else {
-                None
-            }
-        }
-    }
-
-    #[inline(always)]
-    fn impl_unaligned<H>(haystack: *const u8, h: H) -> Option<usize>
-    where
-        H: Fn(__m256i) -> __m256i,
-    {
-        // SAFETY: `haystack` points to at least 32 bytes of valid data.
-        let chunk = unsafe { _mm256_loadu_si256(haystack as *const __m256i) };
-
-        let mask = h(chunk);
-
-        // SAFETY: Conditional compilation ensures that the `avx2` target feature is available.
-        let mask = unsafe { _mm256_movemask_epi8(mask) };
-        if mask != 0 {
-            Some(mask.trailing_zeros() as usize)
-        } else {
-            None
-        }
-    }
-
-    fn impl_unrolled<const N: usize, H>(haystack: &[u8], h: H) -> Option<usize>
-    where
-        H: Fn(__m256i) -> __m256i,
-    {
-        // SAFETY: The representation of `__m256i` is equivalent to `[u8; 32]`
-        // and `align_to` ensures sufficient alignment.
-        let (_prefix, aligned, suffix) = unsafe { haystack.align_to::<__m256i>() };
-
-        let rest = if N == 4 {
-            let (chunks, rest) = aligned.as_chunks::<4>();
-
-            for chunks @ [chunk0, chunk1, chunk2, chunk3] in chunks {
-                let mask0 = h(*chunk0);
-                let mask1 = h(*chunk1);
-                let mask2 = h(*chunk2);
-                let mask3 = h(*chunk3);
-
-                // SAFETY: Conditional compilation ensures that the `avx2` target feature is available.
-                unsafe {
-                    let mask01 = _mm256_or_si256(mask0, mask1);
-                    let mask23 = _mm256_or_si256(mask2, mask3);
-                    let mask = _mm256_or_si256(mask01, mask23);
-
-                    if _mm256_testz_si256(mask, mask) == 0 {
-                        cold();
-
-                        let mut pos = chunks.as_ptr().addr() - haystack.as_ptr().addr();
-
-                        let mask0 = _mm256_movemask_epi8(mask0);
-                        if mask0 != 0 {
-                            return Some(pos + mask0.trailing_zeros() as usize);
-                        } else {
-                            pos += 32;
-                        }
-
-                        let mask1 = _mm256_movemask_epi8(mask1);
-                        if mask1 != 0 {
-                            return Some(pos + mask1.trailing_zeros() as usize);
-                        } else {
-                            pos += 32;
-                        }
-
-                        let mask2 = _mm256_movemask_epi8(mask2);
-                        if mask2 != 0 {
-                            return Some(pos + mask2.trailing_zeros() as usize);
-                        } else {
-                            pos += 32;
-                        }
-
-                        let mask3 = _mm256_movemask_epi8(mask3);
-                        return Some(pos + mask3.trailing_zeros() as usize);
-                    }
-                }
-            }
-
-            rest
-        } else if N == 2 {
-            let (chunks, rest) = aligned.as_chunks::<2>();
-
-            for chunks @ [chunk0, chunk1] in chunks {
-                let mask0 = h(*chunk0);
-                let mask1 = h(*chunk1);
-
-                // SAFETY: Conditional compilation ensures that the `avx2` target feature is available.
-                unsafe {
-                    let mask = _mm256_or_si256(mask0, mask1);
-
-                    if _mm256_testz_si256(mask, mask) == 0 {
-                        cold();
-
-                        let mut pos = chunks.as_ptr().addr() - haystack.as_ptr().addr();
-
-                        let mask0 = _mm256_movemask_epi8(mask0);
-                        if mask0 != 0 {
-                            return Some(pos + mask0.trailing_zeros() as usize);
-                        } else {
-                            pos += 32;
-                        }
-
-                        let mask1 = _mm256_movemask_epi8(mask1);
-                        return Some(pos + mask1.trailing_zeros() as usize);
-                    }
-                }
-            }
-
-            rest
-        } else if N == 1 {
-            aligned
-        } else {
-            unimplemented!()
-        };
-
-        for chunk in rest {
-            let mask = h(*chunk);
-
-            // SAFETY: Conditional compilation ensures that the `avx2` target feature is available.
-            unsafe {
-                let mask = _mm256_movemask_epi8(mask);
-                if mask != 0 {
-                    cold();
-
-                    let pos = (chunk as *const __m256i).addr() - haystack.as_ptr().addr();
-
-                    return Some(pos + mask.trailing_zeros() as usize);
-                }
-            }
-        }
-
-        if suffix.is_empty() {
-            return None;
-        }
-
-        // SAFETY: `haystack` points to at least 32 bytes of valid data.
-        unsafe {
-            let pos = suffix.as_ptr().addr() - haystack.as_ptr().addr() + suffix.len() - 32;
-
-            impl_unaligned(haystack.as_ptr().add(pos), h).map(|off| {
-                cold();
-
-                pos + off
-            })
-        }
-    }
-
     if haystack.len() < 32 {
         return if haystack.len() >= 16 {
-            impl_sse2(haystack, g)
+            memchr_impl_overlapped::<__m128i, N>(haystack, n)
         } else {
-            haystack.iter().position(|&byte| f(byte))
+            haystack.iter().position(move |&byte| n.cmp_byte(byte))
         };
     }
 
-    if let Some(pos) = impl_unaligned(haystack.as_ptr(), h) {
+    if let Some(pos) = unsafe { memchr_impl_unaligned::<__m256i, N>(haystack.as_ptr(), n) } {
         return Some(pos);
     }
 
-    impl_unrolled::<N, _>(haystack, h)
+    memchr_impl_unrolled::<U, __m256i, N>(haystack, n)
+}
+
+#[inline(always)]
+#[cfg(target_arch = "x86_64")]
+unsafe fn memchr_impl_unaligned<M, N>(haystack: *const u8, n: N) -> Option<usize>
+where
+    M: Simd,
+    N: Needle,
+{
+    // SAFETY: `haystack` points to at least `M::BYTES` bytes of valid data.
+    let chunk = unsafe { M::load_unaligned(haystack) };
+
+    let mask = n.cmp_chunk(chunk).movemask();
+
+    if mask != 0 {
+        Some(mask.trailing_zeros() as usize)
+    } else {
+        None
+    }
+}
+
+#[inline(always)]
+#[cfg(all(target_arch = "x86_64", target_feature = "avx2"))]
+fn memchr_impl_overlapped<M, N>(haystack: &[u8], n: N) -> Option<usize>
+where
+    M: Simd,
+    N: Needle,
+{
+    let pos = haystack.len() - M::BYTES;
+
+    // SAFETY: `haystack` has a length of at least `M::BYTES` and at most `2 * M::BYTES - 1` bytes.
+    let chunk0 = unsafe { M::load_unaligned(haystack.as_ptr()) };
+    let chunk1 = unsafe { M::load_unaligned(haystack.as_ptr().add(pos)) };
+
+    let mask0 = n.cmp_chunk(chunk0);
+    let mask1 = n.cmp_chunk(chunk1);
+
+    let mask = mask0.or(mask1);
+
+    if mask.nonzero() {
+        let mask0 = mask0.movemask();
+        if mask0 != 0 {
+            return Some(mask0.trailing_zeros() as usize);
+        }
+
+        let mask1 = mask1.movemask();
+        Some(pos + mask1.trailing_zeros() as usize)
+    } else {
+        None
+    }
+}
+
+#[cfg(target_arch = "x86_64")]
+fn memchr_impl_unrolled<const U: usize, M, N>(haystack: &[u8], n: N) -> Option<usize>
+where
+    M: Simd,
+    N: Needle,
+{
+    // SAFETY: The representation of `M: Simd` is equivalent to `[u8; M::BYTES]`
+    // and `align_to` ensures sufficient alignment.
+    let (_prefix, aligned, suffix) = unsafe { haystack.align_to::<M>() };
+
+    let rest = if U == 4 {
+        let (chunks, rest) = aligned.as_chunks::<4>();
+
+        for chunks @ [chunk0, chunk1, chunk2, chunk3] in chunks {
+            let mask0 = n.cmp_chunk(*chunk0);
+            let mask1 = n.cmp_chunk(*chunk1);
+            let mask2 = n.cmp_chunk(*chunk2);
+            let mask3 = n.cmp_chunk(*chunk3);
+
+            let mask01 = mask0.or(mask1);
+            let mask23 = mask2.or(mask3);
+            let mask = mask01.or(mask23);
+
+            if mask.nonzero() {
+                cold();
+
+                let mut pos = chunks.as_ptr().addr() - haystack.as_ptr().addr();
+
+                let mask0 = mask0.movemask();
+                if mask0 != 0 {
+                    return Some(pos + mask0.trailing_zeros() as usize);
+                } else {
+                    pos += M::BYTES;
+                }
+
+                let mask1 = mask1.movemask();
+                if mask1 != 0 {
+                    return Some(pos + mask1.trailing_zeros() as usize);
+                } else {
+                    pos += M::BYTES;
+                }
+
+                let mask2 = mask2.movemask();
+                if mask2 != 0 {
+                    return Some(pos + mask2.trailing_zeros() as usize);
+                } else {
+                    pos += M::BYTES;
+                }
+
+                let mask3 = mask3.movemask();
+                return Some(pos + mask3.trailing_zeros() as usize);
+            }
+        }
+
+        rest
+    } else if U == 2 {
+        let (chunks, rest) = aligned.as_chunks::<2>();
+
+        for chunks @ [chunk0, chunk1] in chunks {
+            let mask0 = n.cmp_chunk(*chunk0);
+            let mask1 = n.cmp_chunk(*chunk1);
+
+            let mask = mask0.or(mask1);
+
+            if mask.nonzero() {
+                cold();
+
+                let mut pos = chunks.as_ptr().addr() - haystack.as_ptr().addr();
+
+                let mask0 = mask0.movemask();
+                if mask0 != 0 {
+                    return Some(pos + mask0.trailing_zeros() as usize);
+                } else {
+                    pos += M::BYTES;
+                }
+
+                let mask1 = mask1.movemask();
+                return Some(pos + mask1.trailing_zeros() as usize);
+            }
+        }
+
+        rest
+    } else if U == 1 {
+        aligned
+    } else {
+        unimplemented!()
+    };
+
+    for chunk in rest {
+        let mask = n.cmp_chunk(*chunk).movemask();
+
+        if mask != 0 {
+            cold();
+
+            let pos = (chunk as *const M).addr() - haystack.as_ptr().addr();
+
+            return Some(pos + mask.trailing_zeros() as usize);
+        }
+    }
+
+    if suffix.is_empty() {
+        return None;
+    }
+
+    // SAFETY: `haystack` points to at least `M::BYTES` bytes of valid data.
+    unsafe {
+        let pos = suffix.as_ptr().addr() - haystack.as_ptr().addr() + suffix.len() - M::BYTES;
+
+        memchr_impl_unaligned::<M, N>(haystack.as_ptr().add(pos), n).map(|off| {
+            cold();
+
+            pos + off
+        })
+    }
 }
 
 pub(crate) fn memchr2_count(needle1: u8, needle2: u8, haystack: &[u8]) -> (usize, usize) {
@@ -569,10 +393,10 @@ pub(crate) fn memchr2_count(needle1: u8, needle2: u8, haystack: &[u8]) -> (usize
     let mut count2 = 0;
 
     #[cfg(all(target_arch = "x86_64", target_feature = "avx2"))]
-    memchr2_count_impl_avx2(needle1, needle2, haystack, &mut count1, &mut count2);
+    memchr2_count_impl_simd::<__m256i>(needle1, needle2, haystack, &mut count1, &mut count2);
 
     #[cfg(all(target_arch = "x86_64", not(target_feature = "avx2")))]
-    memchr2_count_impl_sse2(needle1, needle2, haystack, &mut count1, &mut count2);
+    memchr2_count_impl_simd::<__m128i>(needle1, needle2, haystack, &mut count1, &mut count2);
 
     #[cfg(not(target_arch = "x86_64"))]
     memchr2_count_impl(needle1, needle2, haystack, &mut count1, &mut count2);
@@ -595,28 +419,29 @@ fn memchr2_count_impl(
 }
 
 #[inline(always)]
-#[cfg(all(target_arch = "x86_64", not(target_feature = "avx2")))]
-fn memchr2_count_impl_sse2(
+#[cfg(target_arch = "x86_64")]
+fn memchr2_count_impl_simd<M>(
     needle1: u8,
     needle2: u8,
     haystack: &[u8],
     count1: &mut usize,
     count2: &mut usize,
-) {
-    // SAFETY: The representation of `__m128i` is equivalent to `[u8; 16]`
+) where
+    M: Simd,
+{
+    // SAFETY: The representation of `M: Simd` is equivalent to `[u8; M::BYTES]`
     // and `align_to` ensures sufficient alignment.
-    let (prefix, aligned, suffix) = unsafe { haystack.align_to::<__m128i>() };
+    let (prefix, aligned, suffix) = unsafe { haystack.align_to::<M>() };
 
     memchr2_count_impl(needle1, needle2, prefix, count1, count2);
 
-    // SAFETY: Conditional compilation ensures that the `sse2` target feature is available.
-    unsafe {
-        let needle1 = _mm_set1_epi8(needle1 as i8);
-        let needle2 = _mm_set1_epi8(needle2 as i8);
+    {
+        let needle1 = M::splat(needle1);
+        let needle2 = M::splat(needle2);
 
         for &chunk in aligned {
-            let hits1 = _mm_movemask_epi8(_mm_cmpeq_epi8(chunk, needle1));
-            let hits2 = _mm_movemask_epi8(_mm_cmpeq_epi8(chunk, needle2));
+            let hits1 = chunk.compare(needle1).movemask();
+            let hits2 = chunk.compare(needle2).movemask();
 
             *count1 += hits1.count_ones() as usize;
             *count2 += hits2.count_ones() as usize;
@@ -626,37 +451,161 @@ fn memchr2_count_impl_sse2(
     memchr2_count_impl(needle1, needle2, suffix, count1, count2);
 }
 
-#[inline(always)]
+#[allow(dead_code, clippy::missing_safety_doc)]
+#[cfg(target_arch = "x86_64")]
+pub(crate) unsafe trait Simd: Copy {
+    const BYTES: usize;
+
+    const ALL: u32;
+
+    fn splat(byte: u8) -> Self;
+
+    unsafe fn load_unaligned(bytes: *const u8) -> Self;
+
+    fn compare(self, other: Self) -> Self;
+
+    fn and(self, other: Self) -> Self;
+
+    fn or(self, other: Self) -> Self;
+
+    fn xor(self, other: Self) -> Self;
+
+    fn shift_right<const BITS: i32>(self) -> Self;
+
+    fn shuffle(self, _other: Self) -> Self {
+        unimplemented!()
+    }
+
+    fn movemask(self) -> u32;
+
+    #[inline(always)]
+    fn nonzero(self) -> bool {
+        self.movemask() != 0
+    }
+}
+
+// SAFETY: Conditional compilation ensures that the `sse2` target feature is available.
+#[cfg(target_arch = "x86_64")]
+unsafe impl Simd for __m128i {
+    const BYTES: usize = 16;
+
+    const ALL: u32 = 0xFF_FF;
+
+    #[inline(always)]
+    fn splat(byte: u8) -> Self {
+        unsafe { _mm_set1_epi8(byte as i8) }
+    }
+
+    #[inline(always)]
+    unsafe fn load_unaligned(bytes: *const u8) -> Self {
+        unsafe { _mm_loadu_si128(bytes.cast()) }
+    }
+
+    #[inline(always)]
+    fn compare(self, other: Self) -> Self {
+        unsafe { _mm_cmpeq_epi8(self, other) }
+    }
+
+    #[inline(always)]
+    fn and(self, other: Self) -> Self {
+        unsafe { _mm_and_si128(self, other) }
+    }
+
+    #[inline(always)]
+    fn or(self, other: Self) -> Self {
+        unsafe { _mm_or_si128(self, other) }
+    }
+
+    #[inline(always)]
+    fn xor(self, other: Self) -> Self {
+        unsafe { _mm_xor_si128(self, other) }
+    }
+
+    #[inline(always)]
+    fn shift_right<const BITS: i32>(self) -> Self {
+        unsafe { _mm_srli_epi16(self, BITS).and(Self::splat(0xF)) }
+    }
+
+    #[inline(always)]
+    #[cfg(target_feature = "ssse3")]
+    fn shuffle(self, other: Self) -> Self {
+        unsafe { _mm_shuffle_epi8(self, other) }
+    }
+
+    #[inline(always)]
+    fn movemask(self) -> u32 {
+        unsafe { _mm_movemask_epi8(self) as u32 }
+    }
+
+    #[inline(always)]
+    #[cfg(target_feature = "sse4.1")]
+    fn nonzero(self) -> bool {
+        unsafe { _mm_testz_si128(self, self) == 0 }
+    }
+}
+
+// SAFETY: Conditional compilation ensures that the `avx2` target feature is available.
 #[cfg(all(target_arch = "x86_64", target_feature = "avx2"))]
-fn memchr2_count_impl_avx2(
-    needle1: u8,
-    needle2: u8,
-    haystack: &[u8],
-    count1: &mut usize,
-    count2: &mut usize,
-) {
-    // SAFETY: The representation of `__m256i` is equivalent to `[u8; 32]`
-    // and `align_to` ensures sufficient alignment.
-    let (prefix, aligned, suffix) = unsafe { haystack.align_to::<__m256i>() };
+unsafe impl Simd for __m256i {
+    const BYTES: usize = 32;
 
-    memchr2_count_impl(needle1, needle2, prefix, count1, count2);
+    const ALL: u32 = 0xFF_FF_FF_FF;
 
-    // SAFETY: Conditional compilation ensures that the `avx2` target feature is available.
-    unsafe {
-        let needle1 = _mm256_set1_epi8(needle1 as i8);
-        let needle2 = _mm256_set1_epi8(needle2 as i8);
-
-        for &chunk in aligned {
-            let hits1 = _mm256_movemask_epi8(_mm256_cmpeq_epi8(chunk, needle1));
-            let hits2 = _mm256_movemask_epi8(_mm256_cmpeq_epi8(chunk, needle2));
-
-            *count1 += hits1.count_ones() as usize;
-            *count2 += hits2.count_ones() as usize;
-        }
+    #[inline(always)]
+    fn splat(byte: u8) -> Self {
+        unsafe { _mm256_set1_epi8(byte as i8) }
     }
 
-    memchr2_count_impl(needle1, needle2, suffix, count1, count2);
+    #[inline(always)]
+    unsafe fn load_unaligned(bytes: *const u8) -> Self {
+        unsafe { _mm256_loadu_si256(bytes.cast()) }
+    }
+
+    #[inline(always)]
+    fn compare(self, other: Self) -> Self {
+        unsafe { _mm256_cmpeq_epi8(self, other) }
+    }
+
+    #[inline(always)]
+    fn and(self, other: Self) -> Self {
+        unsafe { _mm256_and_si256(self, other) }
+    }
+
+    #[inline(always)]
+    fn or(self, other: Self) -> Self {
+        unsafe { _mm256_or_si256(self, other) }
+    }
+
+    #[inline(always)]
+    fn xor(self, other: Self) -> Self {
+        unsafe { _mm256_xor_si256(self, other) }
+    }
+
+    #[inline(always)]
+    fn shift_right<const BITS: i32>(self) -> Self {
+        unsafe { _mm256_srli_epi16(self, BITS).and(Self::splat(0xF)) }
+    }
+
+    #[inline(always)]
+    fn shuffle(self, other: Self) -> Self {
+        unsafe { _mm256_shuffle_epi8(self, other) }
+    }
+
+    #[inline(always)]
+    fn movemask(self) -> u32 {
+        unsafe { _mm256_movemask_epi8(self) as u32 }
+    }
+
+    #[inline(always)]
+    fn nonzero(self) -> bool {
+        unsafe { _mm256_testz_si256(self, self) == 0 }
+    }
 }
+
+#[cfg(target_arch = "x86_64")]
+#[cold]
+#[inline(always)]
+fn cold() {}
 
 #[cfg(all(test, not(miri)))]
 mod tests {

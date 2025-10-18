@@ -1,5 +1,15 @@
+#[cfg(all(
+    target_arch = "x86_64",
+    any(target_feature = "ssse3", target_feature = "avx2")
+))]
+use std::arch::x86_64::*;
 use std::mem::swap;
 
+#[cfg(all(
+    target_arch = "x86_64",
+    any(target_feature = "ssse3", target_feature = "avx2")
+))]
+use crate::memchr::Simd;
 use crate::{
     error::{Error, ErrorKind, Result},
     memchr::{split_after, split_after_n, split_at, split_first},
@@ -360,10 +370,10 @@ impl<'input> Tokenizer<'input> {
             target_arch = "x86_64",
             all(target_feature = "ssse3", not(target_feature = "avx2"))
         ))]
-        parse_qualname_impl_ssse3(self.text, &mut pos, &mut prefix_pos)?;
+        parse_qualname_impl_simd::<__m128i>(self.text, &mut pos, &mut prefix_pos)?;
 
         #[cfg(all(target_arch = "x86_64", target_feature = "avx2"))]
-        parse_qualname_impl_avx2(self.text, &mut pos, &mut prefix_pos)?;
+        parse_qualname_impl_simd::<__m256i>(self.text, &mut pos, &mut prefix_pos)?;
 
         // SAFETY: `parse_qualname_impl*` guarantees an ASCII character at `pos`.
         let qualname = unsafe { self.text.get_unchecked(..pos) };
@@ -531,119 +541,23 @@ fn parse_qualname_impl(text: &str, pos: &mut usize, prefix_pos: &mut Option<usiz
 #[allow(unsafe_code)]
 #[cfg(all(
     target_arch = "x86_64",
-    all(target_feature = "ssse3", not(target_feature = "avx2"))
+    any(target_feature = "ssse3", target_feature = "avx2")
 ))]
-fn parse_qualname_impl_ssse3(
+fn parse_qualname_impl_simd<M>(
     text: &str,
     pos: &mut usize,
     prefix_pos: &mut Option<usize>,
-) -> Result {
-    use std::arch::x86_64::*;
-    use std::mem::transmute;
-
-    const BYTES: [u8; 8] = [b'=', b'/', b'>', b' ', b'\t', b'\r', b'\n', b':'];
-
-    #[allow(dead_code)]
-    #[repr(align(16))]
-    struct AlignedTable([u8; 16]);
-
-    const LO_BYTES: __m128i = {
-        let mut lo_bytes = [0; 16];
-
-        let mut idx = 0;
-        while idx < BYTES.len() {
-            let nibble = BYTES[idx] & 0xF;
-
-            lo_bytes[nibble as usize] |= 1 << idx;
-
-            idx += 1;
-        }
-
-        // SAFETY: The representation of `__m128i` is equivalent
-        // to `[u8; 16]` and `repr(align(..))` ensures alignment.
-        unsafe { transmute(AlignedTable(lo_bytes)) }
-    };
-
-    const HI_BYTES: __m128i = {
-        let mut hi_bytes = [0; 16];
-
-        let mut idx = 0;
-        while idx < BYTES.len() {
-            let nibble = BYTES[idx] >> 4;
-
-            hi_bytes[nibble as usize] |= 1 << idx;
-
-            idx += 1;
-        }
-
-        // SAFETY: The representation of `__m128i` is equivalent
-        // to `[u8; 16]` and `repr(align(..))` ensures alignment.
-        unsafe { transmute(AlignedTable(hi_bytes)) }
-    };
-
-    for chunk in text.as_bytes().chunks_exact(16) {
-        // SAFETY: While unaligned, `chunks_exact` ensures 16 bytes of valid data.
-        let chunk = unsafe { _mm_loadu_si128(chunk.as_ptr() as *const __m128i) };
-
-        // SAFETY: Conditional compilation ensures that the `ssse3` target feature is available.
-        unsafe {
-            let lo_chunk = _mm_and_si128(chunk, _mm_set1_epi8(0xF));
-            let lo_hits = _mm_shuffle_epi8(LO_BYTES, lo_chunk);
-
-            let hi_chunk = _mm_and_si128(_mm_srli_epi16(chunk, 4), _mm_set1_epi8(0xF));
-            let hi_hits = _mm_shuffle_epi8(HI_BYTES, hi_chunk);
-
-            let hits = _mm_and_si128(lo_hits, hi_hits);
-
-            let mask = _mm_cmpeq_epi8(hits, _mm_set1_epi8(0));
-            let cl_mask = _mm_cmpeq_epi8(hits, _mm_set1_epi8(1 << 7));
-
-            let mask = _mm_xor_si128(mask, cl_mask);
-
-            let mask = _mm_movemask_epi8(mask) as u32;
-            let cl_mask = _mm_movemask_epi8(cl_mask) as u32;
-
-            if mask != 0xFF_FF {
-                let off = mask.trailing_ones() as usize;
-
-                if cl_mask != 0 {
-                    let cl_off = cl_mask.trailing_zeros() as usize;
-
-                    if cl_off < off {
-                        *prefix_pos = Some(*pos + cl_off);
-                    }
-                }
-
-                *pos += off;
-
-                return Ok(());
-            }
-
-            if cl_mask != 0 {
-                *prefix_pos = Some(*pos + cl_mask.trailing_zeros() as usize);
-            }
-
-            *pos += 16;
-        }
-    }
-
-    parse_qualname_impl(text, pos, prefix_pos)
-}
-
-#[inline(always)]
-#[allow(unsafe_code)]
-#[cfg(all(target_arch = "x86_64", target_feature = "avx2"))]
-fn parse_qualname_impl_avx2(text: &str, pos: &mut usize, prefix_pos: &mut Option<usize>) -> Result {
-    use std::arch::x86_64::*;
-    use std::mem::transmute;
-
+) -> Result
+where
+    M: Simd,
+{
     const BYTES: [u8; 8] = [b'=', b'/', b'>', b' ', b'\t', b'\r', b'\n', b':'];
 
     #[allow(dead_code)]
     #[repr(align(32))]
     struct AlignedTable([u8; 32]);
 
-    const LO_BYTES: __m256i = {
+    static LO_BYTES: AlignedTable = {
         let mut lo_bytes = [0; 32];
 
         let mut idx = 0;
@@ -656,12 +570,10 @@ fn parse_qualname_impl_avx2(text: &str, pos: &mut usize, prefix_pos: &mut Option
             idx += 1;
         }
 
-        // SAFETY: The representation of `__m256i` is equivalent
-        // to `[u8; 32]` and `repr(align(..))` ensures alignment.
-        unsafe { transmute(AlignedTable(lo_bytes)) }
+        AlignedTable(lo_bytes)
     };
 
-    const HI_BYTES: __m256i = {
+    static HI_BYTES: AlignedTable = {
         let mut hi_bytes = [0; 32];
 
         let mut idx = 0;
@@ -674,55 +586,57 @@ fn parse_qualname_impl_avx2(text: &str, pos: &mut usize, prefix_pos: &mut Option
             idx += 1;
         }
 
-        // SAFETY: The representation of `__m256i` is equivalent
-        // to `[u8; 32]` and `repr(align(..))` ensures alignment.
-        unsafe { transmute(AlignedTable(hi_bytes)) }
+        AlignedTable(hi_bytes)
     };
 
-    for chunk in text.as_bytes().chunks_exact(32) {
-        // SAFETY: While unaligned, `chunks_exact` ensures 32 bytes of valid data.
-        let chunk = unsafe { _mm256_loadu_si256(chunk.as_ptr() as *const __m256i) };
+    assert!(M::BYTES <= 32);
 
-        // SAFETY: Conditional compilation ensures that the `avx2` target feature is available.
-        unsafe {
-            let lo_chunk = _mm256_and_si256(chunk, _mm256_set1_epi8(0xF));
-            let lo_hits = _mm256_shuffle_epi8(LO_BYTES, lo_chunk);
+    // SAFETY: The representation of `M: Simd` is equivalent
+    // to `[u8; M::BYTES]` and `repr(align(..))` ensures alignment.
+    let lo_bytes = unsafe { *(&LO_BYTES as *const AlignedTable as *const M) };
+    let hi_bytes = unsafe { *(&HI_BYTES as *const AlignedTable as *const M) };
 
-            let hi_chunk = _mm256_and_si256(_mm256_srli_epi16(chunk, 4), _mm256_set1_epi8(0xF));
-            let hi_hits = _mm256_shuffle_epi8(HI_BYTES, hi_chunk);
+    for chunk in text.as_bytes().chunks_exact(M::BYTES) {
+        // SAFETY: While unaligned, `chunks_exact` ensures `M::BYTES` of valid data.
+        let chunk = unsafe { M::load_unaligned(chunk.as_ptr()) };
 
-            let hits = _mm256_and_si256(lo_hits, hi_hits);
+        let lo_chunk = chunk.and(M::splat(0xF));
+        let lo_hits = lo_bytes.shuffle(lo_chunk);
 
-            let mask = _mm256_cmpeq_epi8(hits, _mm256_set1_epi8(0));
-            let cl_mask = _mm256_cmpeq_epi8(hits, _mm256_set1_epi8(1 << 7));
+        let hi_chunk = chunk.shift_right::<4>();
+        let hi_hits = hi_bytes.shuffle(hi_chunk);
 
-            let mask = _mm256_xor_si256(mask, cl_mask);
+        let hits = lo_hits.and(hi_hits);
 
-            let mask = _mm256_movemask_epi8(mask) as u32;
-            let cl_mask = _mm256_movemask_epi8(cl_mask) as u32;
+        let mask = hits.compare(M::splat(0));
+        let cl_mask = hits.compare(M::splat(1 << 7));
 
-            if mask != 0xFF_FF_FF_FF {
-                let off = mask.trailing_ones() as usize;
+        let mask = mask.xor(cl_mask);
 
-                if cl_mask != 0 {
-                    let cl_off = cl_mask.trailing_zeros() as usize;
+        let mask = mask.movemask();
+        let cl_mask = cl_mask.movemask();
 
-                    if cl_off < off {
-                        *prefix_pos = Some(*pos + cl_off);
-                    }
-                }
-
-                *pos += off;
-
-                return Ok(());
-            }
+        if mask != M::ALL {
+            let off = mask.trailing_ones() as usize;
 
             if cl_mask != 0 {
-                *prefix_pos = Some(*pos + cl_mask.trailing_zeros() as usize);
+                let cl_off = cl_mask.trailing_zeros() as usize;
+
+                if cl_off < off {
+                    *prefix_pos = Some(*pos + cl_off);
+                }
             }
 
-            *pos += 32;
+            *pos += off;
+
+            return Ok(());
         }
+
+        if cl_mask != 0 {
+            *prefix_pos = Some(*pos + cl_mask.trailing_zeros() as usize);
+        }
+
+        *pos += M::BYTES;
     }
 
     parse_qualname_impl(text, pos, prefix_pos)
@@ -752,7 +666,7 @@ mod tests {
 
                 let mut pos2 = 0;
                 let mut prefix_pos2 = None;
-                let res2 = parse_qualname_impl_ssse3(&text, &mut pos2, &mut prefix_pos2);
+                let res2 = parse_qualname_impl_simd::<__m128i>(&text, &mut pos2, &mut prefix_pos2);
 
                 match (res1, res2) {
                     (Ok(()), Ok(())) => {
@@ -785,7 +699,7 @@ mod tests {
 
                 let mut pos2 = 0;
                 let mut prefix_pos2 = None;
-                let res2 = parse_qualname_impl_avx2(&text, &mut pos2, &mut prefix_pos2);
+                let res2 = parse_qualname_impl_simd::<__m256i>(&text, &mut pos2, &mut prefix_pos2);
 
                 match (res1, res2) {
                     (Ok(()), Ok(())) => {
