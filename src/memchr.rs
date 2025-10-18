@@ -66,7 +66,7 @@ pub(crate) fn split_after_n<const N: usize>(
             return Some((before, after));
         } else {
             // SAFETY: `delim[0]` is a ASCII character, hence followed by a character boundary.
-            text = unsafe { text.get_unchecked(pos + 1..) };
+            text = unsafe { after.get_unchecked(1..) };
         }
     }
 }
@@ -291,7 +291,7 @@ where
                 unsafe {
                     let mask = _mm_or_si128(mask0, mask1);
 
-                    if _mm_movemask_epi8(mask) == 0 {
+                    if _mm_movemask_epi8(mask) != 0 {
                         cold();
 
                         let mut pos = chunks.as_ptr().addr() - haystack.as_ptr().addr();
@@ -352,7 +352,7 @@ where
         return haystack.iter().position(|&byte| f(byte));
     }
 
-    // SAFETY: `haystack` points to at least 32 bytes of valid data.
+    // SAFETY: `haystack` points to at least 16 bytes of valid data.
     if let Some(pos) = unsafe { impl_unaligned(haystack.as_ptr(), g) } {
         return Some(pos);
     }
@@ -577,16 +577,6 @@ pub(crate) fn memchr2_count(needle1: u8, needle2: u8, haystack: &[u8]) -> (usize
     #[cfg(not(target_arch = "x86_64"))]
     memchr2_count_impl(needle1, needle2, haystack, &mut count1, &mut count2);
 
-    debug_assert_eq!(
-        count1,
-        haystack.iter().filter(|&&byte| byte == needle1).count()
-    );
-
-    debug_assert_eq!(
-        count2,
-        haystack.iter().filter(|&&byte| byte == needle2).count()
-    );
-
     (count1, count2)
 }
 
@@ -613,8 +603,6 @@ fn memchr2_count_impl_sse2(
     count1: &mut usize,
     count2: &mut usize,
 ) {
-    use std::arch::x86_64::*;
-
     // SAFETY: The representation of `__m128i` is equivalent to `[u8; 16]`
     // and `align_to` ensures sufficient alignment.
     let (prefix, aligned, suffix) = unsafe { haystack.align_to::<__m128i>() };
@@ -647,8 +635,6 @@ fn memchr2_count_impl_avx2(
     count1: &mut usize,
     count2: &mut usize,
 ) {
-    use std::arch::x86_64::*;
-
     // SAFETY: The representation of `__m256i` is equivalent to `[u8; 32]`
     // and `align_to` ensures sufficient alignment.
     let (prefix, aligned, suffix) = unsafe { haystack.align_to::<__m256i>() };
@@ -670,4 +656,112 @@ fn memchr2_count_impl_avx2(
     }
 
     memchr2_count_impl(needle1, needle2, suffix, count1, count2);
+}
+
+#[cfg(all(test, not(miri)))]
+mod tests {
+    use super::*;
+
+    use std::iter::from_fn;
+
+    use proptest::{collection::vec, num::u8::ANY as ANY_BYTE, test_runner::TestRunner};
+
+    fn iter<F>(haystack: &[u8], f: F) -> impl Iterator<Item = usize>
+    where
+        F: Fn(&[u8]) -> Option<usize>,
+    {
+        let mut pos = 0;
+
+        from_fn(move || {
+            let pos1 = pos + f(&haystack[pos..])?;
+            pos = pos1 + 1;
+            Some(pos1)
+        })
+    }
+
+    #[test]
+    fn memchr_works() {
+        TestRunner::default()
+            .run(&(ANY_BYTE, vec(ANY_BYTE, ..=200)), |(needle, haystack)| {
+                let pos1 = haystack
+                    .iter()
+                    .enumerate()
+                    .filter(|&(_, &byte)| byte == needle)
+                    .map(|(pos, _)| pos)
+                    .collect::<Vec<_>>();
+
+                let pos2 = iter(&haystack, |haystack| memchr(needle, haystack)).collect::<Vec<_>>();
+
+                assert_eq!(pos1, pos2);
+                Ok(())
+            })
+            .unwrap();
+    }
+
+    #[test]
+    fn memchr2_works() {
+        TestRunner::default()
+            .run(
+                &(ANY_BYTE, ANY_BYTE, vec(ANY_BYTE, ..=200)),
+                |(needle1, needle2, haystack)| {
+                    let pos1 = haystack
+                        .iter()
+                        .enumerate()
+                        .filter(|&(_, &byte)| byte == needle1 || byte == needle2)
+                        .map(|(pos, _)| pos)
+                        .collect::<Vec<_>>();
+
+                    let pos2 = iter(&haystack, |haystack| memchr2(needle1, needle2, haystack))
+                        .collect::<Vec<_>>();
+
+                    assert_eq!(pos1, pos2);
+                    Ok(())
+                },
+            )
+            .unwrap();
+    }
+
+    #[test]
+    fn memchr3_works() {
+        TestRunner::default()
+            .run(
+                &(ANY_BYTE, ANY_BYTE, ANY_BYTE, vec(ANY_BYTE, ..=200)),
+                |(needle1, needle2, needle3, haystack)| {
+                    let pos1 = haystack
+                        .iter()
+                        .enumerate()
+                        .filter(|&(_, &byte)| byte == needle1 || byte == needle2 || byte == needle3)
+                        .map(|(pos, _)| pos)
+                        .collect::<Vec<_>>();
+
+                    let pos2 = iter(&haystack, |haystack| {
+                        memchr3(needle1, needle2, needle3, haystack)
+                    })
+                    .collect::<Vec<_>>();
+
+                    assert_eq!(pos1, pos2);
+                    Ok(())
+                },
+            )
+            .unwrap();
+    }
+
+    #[test]
+    fn memchr2_count_works() {
+        TestRunner::default()
+            .run(
+                &(ANY_BYTE, ANY_BYTE, vec(ANY_BYTE, ..=200)),
+                |(needle1, needle2, haystack)| {
+                    let count11 = haystack.iter().filter(|&&byte| byte == needle1).count();
+                    let count21 = haystack.iter().filter(|&&byte| byte == needle2).count();
+
+                    let (count12, count22) = memchr2_count(needle1, needle2, &haystack);
+
+                    assert_eq!(count11, count12);
+                    assert_eq!(count21, count22,);
+                    Ok(())
+                },
+            )
+            .unwrap();
+    }
 }

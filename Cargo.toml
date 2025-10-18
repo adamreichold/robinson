@@ -9,7 +9,7 @@ readme = "README.md"
 exclude = ["benches"]
 repository = "https://github.com/adamreichold/robinson"
 license = "MIT OR Apache-2.0"
-version = "0.5.11"
+version = "0.5.12"
 edition = "2024"
 
 [features]
@@ -21,6 +21,7 @@ serde_core = { version = "1", optional = true }
 
 [dev-dependencies]
 pretty_assertions = "1"
+proptest = "1"
 serde = { version = "1", features = ["derive"] }
 
 [package.metadata.docs.rs]

@@ -727,3 +727,83 @@ fn parse_qualname_impl_avx2(text: &str, pos: &mut usize, prefix_pos: &mut Option
 
     parse_qualname_impl(text, pos, prefix_pos)
 }
+
+#[cfg(all(test, not(miri)))]
+#[cfg(all(
+    target_arch = "x86_64",
+    any(target_feature = "ssse3", target_feature = "avx2")
+))]
+mod tests {
+    use super::*;
+
+    use proptest::test_runner::TestRunner;
+
+    #[test]
+    #[cfg(all(
+        target_arch = "x86_64",
+        all(target_feature = "ssse3", not(target_feature = "avx2"))
+    ))]
+    fn parse_qualname_impl_ssse3_works() {
+        TestRunner::default()
+            .run(&".{0,200}", |text| {
+                let mut pos1 = 0;
+                let mut prefix_pos1 = None;
+                let res1 = parse_qualname_impl(&text, &mut pos1, &mut prefix_pos1);
+
+                let mut pos2 = 0;
+                let mut prefix_pos2 = None;
+                let res2 = parse_qualname_impl_ssse3(&text, &mut pos2, &mut prefix_pos2);
+
+                match (res1, res2) {
+                    (Ok(()), Ok(())) => {
+                        assert_eq!(pos1, pos2);
+                        match (prefix_pos1, prefix_pos2) {
+                            (Some(prefix_pos1), Some(prefix_pos2)) => {
+                                assert_eq!(text.as_bytes()[prefix_pos1], b':');
+                                assert_eq!(text.as_bytes()[prefix_pos2], b':');
+                            }
+                            (None, None) => (),
+                            _ => panic!(),
+                        }
+                    }
+                    (Err(_), Err(_)) => (),
+                    _ => panic!(),
+                }
+                Ok(())
+            })
+            .unwrap();
+    }
+
+    #[test]
+    #[cfg(all(target_arch = "x86_64", target_feature = "avx2"))]
+    fn parse_qualname_impl_avx2_works() {
+        TestRunner::default()
+            .run(&".{0,200}", |text| {
+                let mut pos1 = 0;
+                let mut prefix_pos1 = None;
+                let res1 = parse_qualname_impl(&text, &mut pos1, &mut prefix_pos1);
+
+                let mut pos2 = 0;
+                let mut prefix_pos2 = None;
+                let res2 = parse_qualname_impl_avx2(&text, &mut pos2, &mut prefix_pos2);
+
+                match (res1, res2) {
+                    (Ok(()), Ok(())) => {
+                        assert_eq!(pos1, pos2);
+                        match (prefix_pos1, prefix_pos2) {
+                            (Some(prefix_pos1), Some(prefix_pos2)) => {
+                                assert_eq!(text.as_bytes()[prefix_pos1], b':');
+                                assert_eq!(text.as_bytes()[prefix_pos2], b':');
+                            }
+                            (None, None) => (),
+                            _ => panic!(),
+                        }
+                    }
+                    (Err(_), Err(_)) => (),
+                    _ => panic!(),
+                }
+                Ok(())
+            })
+            .unwrap();
+    }
+}
