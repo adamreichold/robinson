@@ -4,7 +4,7 @@
 use std::arch::x86_64::*;
 
 #[inline]
-pub(crate) fn split_first<const N: usize>(text: &str, bytes: [u8; N]) -> Option<(u8, &str)> {
+pub(crate) fn split_first<'a>(text: &'a str, bytes: &[u8]) -> Option<(u8, &'a str)> {
     assert!(bytes.is_ascii());
 
     if let Some(&first) = text.as_bytes().first()
@@ -46,11 +46,8 @@ pub(crate) fn split_after(text: &str, delim: u8) -> Option<(&str, &str)> {
 }
 
 #[inline]
-pub(crate) fn split_after_n<const N: usize>(
-    mut text: &str,
-    delim: [u8; N],
-) -> Option<(&str, &str)> {
-    assert!(delim.is_ascii());
+pub(crate) fn split_after_n<'a>(mut text: &'a str, delim: &[u8]) -> Option<(&'a str, &'a str)> {
+    assert!(!delim.is_empty() && delim.is_ascii());
 
     loop {
         let pos = memchr(delim[0], text.as_bytes())?;
@@ -58,10 +55,10 @@ pub(crate) fn split_after_n<const N: usize>(
         // SAFETY: `delim[0]` is an ASCII character, hence preceeded by a character boundary.
         let after = unsafe { text.get_unchecked(pos..) };
 
-        if after.as_bytes().starts_with(&delim) {
+        if after.as_bytes().starts_with(delim) {
             // SAFETY: All of `delim` are ASCII characters, hence surrounded by character boundaries.
             let before = unsafe { text.get_unchecked(..pos) };
-            let after = unsafe { after.get_unchecked(N..) };
+            let after = unsafe { after.get_unchecked(delim.len()..) };
 
             return Some((before, after));
         } else {

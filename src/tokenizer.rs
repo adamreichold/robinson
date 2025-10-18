@@ -105,7 +105,7 @@ impl<'input> Tokenizer<'input> {
     fn try_space(&mut self) -> bool {
         let mut space = false;
 
-        while let Some((_space, rest)) = split_first(self.text, [b' ', b'\t', b'\r', b'\n']) {
+        while let Some((_space, rest)) = split_first(self.text, b" \t\r\n") {
             space = true;
             self.text = rest;
         }
@@ -122,7 +122,7 @@ impl<'input> Tokenizer<'input> {
     }
 
     fn expect_quote(&mut self) -> Result<u8> {
-        match split_first(self.text, [b'"', b'\'']) {
+        match split_first(self.text, b"\"'") {
             Some((quote, rest)) => {
                 self.text = rest;
                 Ok(quote)
@@ -199,7 +199,6 @@ impl<'input> Tokenizer<'input> {
         }
     }
 
-    #[cold]
     fn parse_doctype_declaration(&mut self) -> Result {
         self.expect_space()?;
 
@@ -295,7 +294,7 @@ impl<'input> Tokenizer<'input> {
     }
 
     fn parse_comment(&mut self) -> Result {
-        let Some((_comment, rest)) = split_after_n(self.text, *b"-->") else {
+        let Some((_comment, rest)) = split_after_n(self.text, b"-->") else {
             return ErrorKind::ExpectedLiteral("-->").into();
         };
         self.text = rest;
@@ -308,7 +307,7 @@ impl<'input> Tokenizer<'input> {
 
         self.try_space();
 
-        let Some((_pi, rest)) = split_after_n(self.text, *b"?>") else {
+        let Some((_pi, rest)) = split_after_n(self.text, b"?>") else {
             return ErrorKind::ExpectedLiteral("?>").into();
         };
         self.text = rest;
@@ -326,7 +325,7 @@ impl<'input> Tokenizer<'input> {
     }
 
     fn parse_cdata(&mut self, parser: &mut Parser<'input>) -> Result {
-        let Some((cdata, rest)) = split_after_n(self.text, *b"]]>") else {
+        let Some((cdata, rest)) = split_after_n(self.text, b"]]>") else {
             return ErrorKind::ExpectedLiteral("]]>").into();
         };
         self.text = rest;

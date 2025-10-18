@@ -236,9 +236,11 @@ impl<'input> Parser<'input> {
             last_child: None,
         });
 
-        for id in self.subtree.drain(..) {
+        for &id in &self.subtree {
             self.doc.nodes[id.get()].next_subtree = Some(new_id);
         }
+
+        self.subtree.clear();
 
         Ok(new_id)
     }
@@ -536,7 +538,7 @@ impl<'input> Parser<'input> {
             return ErrorKind::TooManyAttributes.into();
         }
 
-        for attribute in self.attributes.drain(..) {
+        for attribute in &self.attributes {
             let namespace = if attribute.prefix.is_none() {
                 None
             } else {
@@ -551,6 +553,8 @@ impl<'input> Parser<'input> {
                 value: attribute.value,
             });
         }
+
+        self.attributes.clear();
 
         Ok(old_len as u32..new_len as u32)
     }
