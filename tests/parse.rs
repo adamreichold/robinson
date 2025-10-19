@@ -1,5 +1,5 @@
 use std::env::var;
-use std::fs::{exists, read_dir, read_to_string, write};
+use std::fs::{read_dir, read_to_string, write};
 
 use pretty_assertions::assert_eq;
 use robinson::Document;
@@ -13,13 +13,13 @@ fn test(name: &str) {
     let res = Document::parse(&text);
     let ast = format!("{res:#?}\n");
 
-    let expected_ast = read_to_string(&output).unwrap();
+    let expected_ast = read_to_string(&output).unwrap_or_default();
 
     if var("OVERWRITE_OUTPUTS").is_ok() {
         write(&output, &ast).unwrap();
     }
 
-    assert_eq!(ast, expected_ast);
+    assert_eq!(expected_ast, ast);
 }
 
 macro_rules! test {
@@ -38,9 +38,11 @@ test!(billion_laughs_attribute_value);
 test!(billion_laughs_element);
 test!(cdata);
 test!(children);
+test!(comment);
 test!(crlf_via_char);
 test!(crlf_via_entity);
 test!(declaration);
+test!(declaration_pi);
 test!(empty);
 test!(entity_reference_attribute_value);
 test!(entity_reference_element);
@@ -67,7 +69,7 @@ fn discover_tests() {
         let file_name = entry.file_name().into_string().unwrap();
 
         if let Some(test) = file_name.strip_suffix(".xml") {
-            tests.push(test.to_owned());
+            tests.push(format!("test!({test});"));
         }
     }
 
@@ -78,12 +80,6 @@ fn discover_tests() {
         .skip_while(|line| *line != "// <<<<<<< discovered_tests")
         .skip(1)
         .take_while(|line| *line != "// >>>>>>> discovered_tests")
-        .map(|line| {
-            line.strip_prefix("test!(")
-                .unwrap()
-                .strip_suffix(");")
-                .unwrap()
-        })
         .collect::<Vec<_>>();
 
     tests.sort_unstable();
@@ -94,32 +90,24 @@ fn discover_tests() {
         let mut new_lines = Vec::new();
 
         for line in &mut old_lines {
-            new_lines.push(line.to_owned());
+            new_lines.push(line);
             if line == "// <<<<<<< discovered_tests" {
                 break;
             }
         }
 
-        new_lines.extend(tests.iter().map(|test| format!("test!({test});")));
+        new_lines.extend(tests.iter().map(|test| test.as_str()));
 
         for line in &mut old_lines {
             if line == "// >>>>>>> discovered_tests" {
-                new_lines.push(line.to_owned());
+                new_lines.push(line);
                 break;
             }
         }
 
-        new_lines.extend(old_lines.map(|line| line.to_owned()));
+        new_lines.extend(old_lines);
 
         write("tests/parse.rs", new_lines.join("\n")).unwrap();
-
-        for test in &tests {
-            let output = format!("tests/outputs/{test}.dbg");
-
-            if !exists(&output).unwrap() {
-                write(&output, []).unwrap();
-            }
-        }
     }
 
     assert_eq!(tests, discovered_tests);
