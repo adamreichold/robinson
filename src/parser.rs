@@ -278,6 +278,7 @@ impl<'input> Parser<'input> {
         self.append_text_impl(tokenizer, text, pos)
     }
 
+    #[cold]
     #[inline(never)]
     fn append_text_impl(
         &mut self,
@@ -387,6 +388,7 @@ impl<'input> Parser<'input> {
         self.append_cdata_impl(cdata, pos)
     }
 
+    #[cold]
     #[inline(never)]
     fn append_cdata_impl(&mut self, mut cdata: &'input str, mut pos: Option<usize>) -> Result {
         let mut buf = StringBuf::new(&mut self.doc.strings, cdata.len());
@@ -424,16 +426,6 @@ impl<'input> Parser<'input> {
             return self.doc.strings.borrowed(value);
         }
 
-        self.normalize_attribute_value_impl(tokenizer, value, pos)
-    }
-
-    #[inline(never)]
-    fn normalize_attribute_value_impl(
-        &mut self,
-        tokenizer: &mut Tokenizer<'input>,
-        value: &'input str,
-        pos: Option<usize>,
-    ) -> Result<NodeId> {
         let mut strings = self.doc.strings.take();
         let mut buf = StringBuf::new(&mut strings, value.len());
 
@@ -445,6 +437,8 @@ impl<'input> Parser<'input> {
         Ok(value)
     }
 
+    #[cold]
+    #[inline(never)]
     fn normalize_attribute_value_impl_recursive(
         &mut self,
         tokenizer: &mut Tokenizer<'input>,
