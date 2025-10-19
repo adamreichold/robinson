@@ -61,6 +61,7 @@ impl<'input> Tokenizer<'input> {
     fn set_pos(&self, mut err: Box<Error>) -> Box<Error> {
         let mut line = 0;
         let mut pos = self.text.as_ptr().addr();
+
         let mut found = false;
 
         for init_text in self.init_text.lines() {
@@ -414,7 +415,7 @@ impl<'input> Tokenizer<'input> {
     fn parse_element(&mut self, parser: &mut Parser<'input>) -> Result {
         let (prefix, local) = self.parse_qualname()?;
 
-        parser.open_element(prefix, local)?;
+        parser.open_element(prefix, local);
 
         loop {
             let space = self.try_space();
@@ -434,9 +435,7 @@ impl<'input> Tokenizer<'input> {
                     return ErrorKind::ExpectedSpace.into();
                 }
 
-                let (prefix, local, value) = self.parse_attribute()?;
-
-                parser.push_attribute(self, prefix, local, value)?;
+                self.parse_attribute(parser)?;
             }
         }
     }
@@ -455,7 +454,7 @@ impl<'input> Tokenizer<'input> {
         parser.close_element(self, prefix, local)
     }
 
-    fn parse_attribute(&mut self) -> Result<(Option<&'input str>, &'input str, &'input str)> {
+    fn parse_attribute(&mut self, parser: &mut Parser<'input>) -> Result {
         let (prefix, local) = self.parse_qualname()?;
 
         self.try_space();
@@ -464,7 +463,7 @@ impl<'input> Tokenizer<'input> {
 
         let value = self.parse_quoted()?;
 
-        Ok((prefix, local, value))
+        parser.push_attribute(self, prefix, local, value)
     }
 
     pub(crate) fn parse_reference(&mut self) -> Result<Reference<'input>> {

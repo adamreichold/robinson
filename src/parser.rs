@@ -95,14 +95,8 @@ impl<'input> Parser<'input> {
         })
     }
 
-    pub(crate) fn open_element(
-        &mut self,
-        prefix: Option<&'input str>,
-        local: &'input str,
-    ) -> Result {
+    pub(crate) fn open_element(&mut self, prefix: Option<&'input str>, local: &'input str) {
         self.element = Some(CurrElement { prefix, local });
-
-        Ok(())
     }
 
     pub(crate) fn push_attribute(

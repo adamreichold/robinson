@@ -8,22 +8,22 @@ use crate::{
 pub(crate) struct Strings<'input> {
     text: &'input str,
     buf: Box<str>,
-    vals: Box<[(u32, u32)]>,
+    data: Box<[StringData]>,
 }
 
 impl<'input> Strings<'input> {
     #[allow(unsafe_code)]
     pub(crate) fn get(&self, id: NodeId) -> &str {
-        // SAFETY: All entries in `vals` are valid ranges into
+        // SAFETY: All entries in `data` are valid ranges into
         // `text` or `buf`, depending on their tag.
-        unsafe { get(self.vals[id.get()], self.text, &self.buf) }
+        unsafe { self.data[id.get()].get(self.text, &self.buf) }
     }
 }
 
 pub(crate) struct StringsBuilder<'input> {
     text: &'input str,
     buf: String,
-    vals: Vec<(u32, u32)>,
+    data: Vec<StringData>,
 }
 
 impl<'input> StringsBuilder<'input> {
@@ -35,12 +35,12 @@ impl<'input> StringsBuilder<'input> {
         Ok(Self {
             text,
             buf: String::new(),
-            vals: Vec::with_capacity(cap),
+            data: Vec::with_capacity(cap),
         })
     }
 
     pub(crate) fn borrowed(&mut self, val: &str) -> Result<NodeId> {
-        if val.len() & TAG as usize != 0 {
+        if val.len() & StringData::TAG as usize != 0 {
             return ErrorKind::TooManyStrings.into();
         }
 
@@ -51,9 +51,12 @@ impl<'input> StringsBuilder<'input> {
 
         let pos = val_addr - text_addr;
 
-        let id = NodeId::new(self.vals.len())?;
+        let id = NodeId::new(self.data.len())?;
 
-        self.vals.push((pos as u32, val.len() as u32));
+        self.data.push(StringData {
+            pos: pos as u32,
+            tagged_len: val.len() as u32,
+        });
 
         Ok(id)
     }
@@ -65,12 +68,12 @@ impl<'input> StringsBuilder<'input> {
     }
 
     pub(crate) fn pop(&mut self, id: NodeId) {
-        debug_assert_eq!(id.get() + 1, self.vals.len());
+        debug_assert_eq!(id.get() + 1, self.data.len());
 
-        if let Some(val) = self.vals.pop()
-            && val.1 & TAG != 0
+        if let Some(data) = self.data.pop()
+            && data.is_tagged()
         {
-            let pos = val.0 as usize;
+            let pos = data.pos as usize;
 
             self.buf.truncate(pos);
         }
@@ -78,19 +81,19 @@ impl<'input> StringsBuilder<'input> {
 
     #[allow(unsafe_code)]
     pub(crate) fn get(&self, id: NodeId) -> &str {
-        // SAFETY: All entries in `vals` are valid ranges into
+        // SAFETY: All entries in `data` are valid ranges into
         // `text` or `buf`, depending on their tag.
-        unsafe { get(self.vals[id.get()], self.text, &self.buf) }
+        unsafe { self.data[id.get()].get(self.text, &self.buf) }
     }
 
     pub(crate) fn take(&mut self) -> Self {
         let buf = take(&mut self.buf);
-        let vals = take(&mut self.vals);
+        let data = take(&mut self.data);
 
         Self {
             text: self.text,
             buf,
-            vals,
+            data,
         }
     }
 
@@ -98,27 +101,39 @@ impl<'input> StringsBuilder<'input> {
         Strings {
             text: self.text,
             buf: self.buf.into_boxed_str(),
-            vals: self.vals.into_boxed_slice(),
+            data: self.data.into_boxed_slice(),
         }
     }
 }
 
-const TAG: u32 = 1 << (u32::BITS - 1);
+#[derive(Clone, Copy)]
+struct StringData {
+    pos: u32,
+    tagged_len: u32,
+}
 
-#[allow(unsafe_code)]
-unsafe fn get<'a>(val: (u32, u32), text: &'a str, buf: &'a str) -> &'a str {
-    let pos = val.0 as usize;
+impl StringData {
+    const TAG: u32 = 1 << (u32::BITS - 1);
 
-    if val.1 & TAG == 0 {
-        let len = val.1 as usize;
+    fn is_tagged(&self) -> bool {
+        self.tagged_len & Self::TAG != 0
+    }
 
-        // SAFETY: `val` is untagged and hence a valid range into `text`.
-        unsafe { text.get_unchecked(pos..pos + len) }
-    } else {
-        let len = (val.1 & !TAG) as usize;
+    #[allow(unsafe_code)]
+    unsafe fn get<'a>(&self, text: &'a str, buf: &'a str) -> &'a str {
+        let pos = self.pos as usize;
 
-        // SAFETY: `val` is tagged and hence a valid range into `buf`.
-        unsafe { buf.get_unchecked(pos..pos + len) }
+        if self.is_tagged() {
+            let len = (self.tagged_len & !Self::TAG) as usize;
+
+            // SAFETY: `self` is tagged and hence a valid range into `buf`.
+            unsafe { buf.get_unchecked(pos..pos + len) }
+        } else {
+            let len = self.tagged_len as usize;
+
+            // SAFETY: `self` is untagged and hence a valid range into `text`.
+            unsafe { text.get_unchecked(pos..pos + len) }
+        }
     }
 }
 
@@ -155,13 +170,16 @@ impl<'doc, 'input> StringBuf<'doc, 'input> {
 
         let len = self.strings.buf.len() - self.pos;
 
-        if len & TAG as usize != 0 {
+        if len & StringData::TAG as usize != 0 {
             return ErrorKind::TooManyStrings.into();
         }
 
-        let id = NodeId::new(self.strings.vals.len())?;
+        let id = NodeId::new(self.strings.data.len())?;
 
-        self.strings.vals.push((self.pos as u32, len as u32 | TAG));
+        self.strings.data.push(StringData {
+            pos: self.pos as u32,
+            tagged_len: len as u32 | StringData::TAG,
+        });
 
         Ok(id)
     }
