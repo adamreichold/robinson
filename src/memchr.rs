@@ -69,13 +69,6 @@ pub(crate) fn split_after_n<'a>(mut text: &'a str, delim: &[u8]) -> Option<(&'a 
 }
 
 #[inline]
-#[cfg(not(target_arch = "x86_64"))]
-pub(crate) fn memchr(needle: u8, haystack: &[u8]) -> Option<usize> {
-    haystack.iter().position(move |&byte| byte == needle)
-}
-
-#[inline]
-#[cfg(target_arch = "x86_64")]
 pub(crate) fn memchr(needle: u8, haystack: &[u8]) -> Option<usize> {
     #[derive(Clone, Copy)]
     struct One(u8);
@@ -99,15 +92,6 @@ pub(crate) fn memchr(needle: u8, haystack: &[u8]) -> Option<usize> {
 }
 
 #[inline]
-#[cfg(not(target_arch = "x86_64"))]
-pub(crate) fn memchr2(needle1: u8, needle2: u8, haystack: &[u8]) -> Option<usize> {
-    haystack
-        .iter()
-        .position(move |&byte| byte == needle1 || byte == needle2)
-}
-
-#[inline]
-#[cfg(target_arch = "x86_64")]
 pub(crate) fn memchr2(needle1: u8, needle2: u8, haystack: &[u8]) -> Option<usize> {
     #[derive(Clone, Copy)]
     struct Two(u8, u8);
@@ -123,10 +107,10 @@ pub(crate) fn memchr2(needle1: u8, needle2: u8, haystack: &[u8]) -> Option<usize
         where
             M: Simd,
         {
-            let mask1 = chunk.compare(M::splat(self.0));
-            let mask2 = chunk.compare(M::splat(self.1));
+            let mask0 = chunk.compare(M::splat(self.0));
+            let mask1 = chunk.compare(M::splat(self.1));
 
-            mask1.or(mask2)
+            mask0.or(mask1)
         }
     }
 
@@ -134,15 +118,6 @@ pub(crate) fn memchr2(needle1: u8, needle2: u8, haystack: &[u8]) -> Option<usize
 }
 
 #[inline]
-#[cfg(not(target_arch = "x86_64"))]
-pub(crate) fn memchr3(needle1: u8, needle2: u8, needle3: u8, haystack: &[u8]) -> Option<usize> {
-    haystack
-        .iter()
-        .position(move |&byte| byte == needle1 || byte == needle2 || byte == needle3)
-}
-
-#[inline]
-#[cfg(target_arch = "x86_64")]
 pub(crate) fn memchr3(needle1: u8, needle2: u8, needle3: u8, haystack: &[u8]) -> Option<usize> {
     #[derive(Clone, Copy)]
     struct Three(u8, u8, u8);
@@ -158,17 +133,18 @@ pub(crate) fn memchr3(needle1: u8, needle2: u8, needle3: u8, haystack: &[u8]) ->
         where
             M: Simd,
         {
-            let mask1 = chunk.compare(M::splat(self.0));
-            let mask2 = chunk.compare(M::splat(self.1));
-            let mask3 = chunk.compare(M::splat(self.2));
+            let mask0 = chunk.compare(M::splat(self.0));
+            let mask1 = chunk.compare(M::splat(self.1));
+            let mask2 = chunk.compare(M::splat(self.2));
 
-            mask1.or(mask2).or(mask3)
+            mask0.or(mask1).or(mask2)
         }
     }
 
     memchr_impl(haystack, Unroll::<1>, Three(needle1, needle2, needle3))
 }
 
+#[allow(dead_code)]
 trait Needle: Copy {
     fn cmp_byte(self, byte: u8) -> bool;
 
@@ -177,8 +153,16 @@ trait Needle: Copy {
         M: Simd;
 }
 
-#[cfg(target_arch = "x86_64")]
 struct Unroll<const U: usize>;
+
+#[inline(always)]
+#[cfg(not(target_arch = "x86_64"))]
+fn memchr_impl<const U: usize, N>(haystack: &[u8], _u: Unroll<U>, n: N) -> Option<usize>
+where
+    N: Needle,
+{
+    haystack.iter().position(move |&byte| n.cmp_byte(byte))
+}
 
 #[inline(always)]
 #[cfg(all(target_arch = "x86_64", not(target_feature = "avx2")))]
@@ -432,24 +416,18 @@ fn memchr2_count_impl_simd<M>(
 
     memchr2_count_impl(needle1, needle2, prefix, count1, count2);
 
-    {
-        let needle1 = M::splat(needle1);
-        let needle2 = M::splat(needle2);
+    for &chunk in aligned {
+        let hits1 = chunk.compare(M::splat(needle1)).movemask();
+        let hits2 = chunk.compare(M::splat(needle2)).movemask();
 
-        for &chunk in aligned {
-            let hits1 = chunk.compare(needle1).movemask();
-            let hits2 = chunk.compare(needle2).movemask();
-
-            *count1 += hits1.count_ones() as usize;
-            *count2 += hits2.count_ones() as usize;
-        }
+        *count1 += hits1.count_ones() as usize;
+        *count2 += hits2.count_ones() as usize;
     }
 
     memchr2_count_impl(needle1, needle2, suffix, count1, count2);
 }
 
 #[allow(dead_code, clippy::missing_safety_doc)]
-#[cfg(target_arch = "x86_64")]
 pub(crate) unsafe trait Simd: Copy {
     const BYTES: usize;
 
@@ -469,16 +447,11 @@ pub(crate) unsafe trait Simd: Copy {
 
     fn shift_right<const BITS: i32>(self) -> Self;
 
-    fn shuffle(self, _other: Self) -> Self {
-        unimplemented!()
-    }
+    fn shuffle(self, _other: Self) -> Self;
 
     fn movemask(self) -> u32;
 
-    #[inline(always)]
-    fn nonzero(self) -> bool {
-        self.movemask() != 0
-    }
+    fn nonzero(self) -> bool;
 }
 
 // SAFETY: Conditional compilation ensures that the `sse2` target feature is available.
@@ -530,6 +503,12 @@ unsafe impl Simd for __m128i {
     }
 
     #[inline(always)]
+    #[cfg(not(target_feature = "ssse3"))]
+    fn shuffle(self, _other: Self) -> Self {
+        unimplemented!()
+    }
+
+    #[inline(always)]
     fn movemask(self) -> u32 {
         unsafe { _mm_movemask_epi8(self) as u32 }
     }
@@ -538,6 +517,12 @@ unsafe impl Simd for __m128i {
     #[cfg(target_feature = "sse4.1")]
     fn nonzero(self) -> bool {
         unsafe { _mm_testz_si128(self, self) == 0 }
+    }
+
+    #[inline(always)]
+    #[cfg(not(target_feature = "sse4.1"))]
+    fn nonzero(self) -> bool {
+        self.movemask() != 0
     }
 }
 

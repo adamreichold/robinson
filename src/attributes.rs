@@ -81,21 +81,24 @@ pub struct Attributes<'doc, 'input> {
     doc: &'doc Document<'input>,
 }
 
+impl<'doc, 'input> Attributes<'doc, 'input> {
+    fn get(&self, data: &'doc AttributeData<'input>) -> Attribute<'doc, 'input> {
+        Attribute {
+            data,
+            doc: self.doc,
+        }
+    }
+}
+
 impl<'doc, 'input> Iterator for Attributes<'doc, 'input> {
     type Item = Attribute<'doc, 'input>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        self.data.next().map(|data| Attribute {
-            data,
-            doc: self.doc,
-        })
+        self.data.next().map(|data| self.get(data))
     }
 
     fn nth(&mut self, n: usize) -> Option<Self::Item> {
-        self.data.nth(n).map(|data| Attribute {
-            data,
-            doc: self.doc,
-        })
+        self.data.nth(n).map(|data| self.get(data))
     }
 
     fn size_hint(&self) -> (usize, Option<usize>) {
@@ -107,10 +110,7 @@ impl ExactSizeIterator for Attributes<'_, '_> {}
 
 impl DoubleEndedIterator for Attributes<'_, '_> {
     fn next_back(&mut self) -> Option<Self::Item> {
-        self.data.next_back().map(|data| Attribute {
-            data,
-            doc: self.doc,
-        })
+        self.data.next_back().map(|data| self.get(data))
     }
 }
 
