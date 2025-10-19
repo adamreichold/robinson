@@ -118,14 +118,20 @@ pub(crate) fn memchr2(needle1: u8, needle2: u8, haystack: &[u8]) -> Option<usize
 }
 
 #[inline]
-pub(crate) fn memchr3(needle1: u8, needle2: u8, needle3: u8, haystack: &[u8]) -> Option<usize> {
+pub(crate) fn memchr4(
+    needle1: u8,
+    needle2: u8,
+    needle3: u8,
+    needle4: u8,
+    haystack: &[u8],
+) -> Option<usize> {
     #[derive(Clone, Copy)]
-    struct Three(u8, u8, u8);
+    struct Four(u8, u8, u8, u8);
 
-    impl Needle for Three {
+    impl Needle for Four {
         #[inline(always)]
         fn cmp_byte(self, byte: u8) -> bool {
-            byte == self.0 || byte == self.1 || byte == self.2
+            byte == self.0 || byte == self.1 || byte == self.2 || byte == self.3
         }
 
         #[inline(always)]
@@ -136,12 +142,19 @@ pub(crate) fn memchr3(needle1: u8, needle2: u8, needle3: u8, haystack: &[u8]) ->
             let mask0 = chunk.compare(M::splat(self.0));
             let mask1 = chunk.compare(M::splat(self.1));
             let mask2 = chunk.compare(M::splat(self.2));
+            let mask3 = chunk.compare(M::splat(self.3));
 
-            mask0.or(mask1).or(mask2)
+            let mask01 = mask0.or(mask1);
+            let mask23 = mask2.or(mask3);
+            mask01.or(mask23)
         }
     }
 
-    memchr_impl(haystack, Unroll::<1>, Three(needle1, needle2, needle3))
+    memchr_impl(
+        haystack,
+        Unroll::<1>,
+        Four(needle1, needle2, needle3, needle4),
+    )
 }
 
 #[allow(dead_code)]
@@ -653,20 +666,28 @@ mod tests {
     }
 
     #[test]
-    fn memchr3_works() {
+    fn memchr4_works() {
         TestRunner::default()
             .run(
-                &(ANY_BYTE, ANY_BYTE, ANY_BYTE, vec(ANY_BYTE, ..=200)),
-                |(needle1, needle2, needle3, haystack)| {
+                &(
+                    ANY_BYTE,
+                    ANY_BYTE,
+                    ANY_BYTE,
+                    ANY_BYTE,
+                    vec(ANY_BYTE, ..=200),
+                ),
+                |(needle1, needle2, needle3, needle4, haystack)| {
                     let pos1 = haystack
                         .iter()
                         .enumerate()
-                        .filter(|&(_, &byte)| byte == needle1 || byte == needle2 || byte == needle3)
+                        .filter(|&(_, &byte)| {
+                            byte == needle1 || byte == needle2 || byte == needle3 || byte == needle4
+                        })
                         .map(|(pos, _)| pos)
                         .collect::<Vec<_>>();
 
                     let pos2 = iter(&haystack, |haystack| {
-                        memchr3(needle1, needle2, needle3, haystack)
+                        memchr4(needle1, needle2, needle3, needle4, haystack)
                     })
                     .collect::<Vec<_>>();
 

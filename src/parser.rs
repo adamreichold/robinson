@@ -4,7 +4,7 @@ use crate::{
     Document, DocumentBuilder, NameData,
     attributes::AttributeData,
     error::{ErrorKind, Result},
-    memchr::{memchr, memchr2, memchr2_count, memchr3},
+    memchr::{memchr, memchr2, memchr2_count, memchr4},
     nodes::{ElementData, NodeData, NodeId},
     strings::{StringBuf, StringsBuilder, cmp_names, cmp_opt_names},
     tokenizer::{Reference, Tokenizer},
@@ -418,17 +418,16 @@ impl<'input> Parser<'input> {
         tokenizer: &mut Tokenizer<'input>,
         value: &'input str,
     ) -> Result<NodeId> {
-        let pos_entity = memchr(b'&', value.as_bytes());
-        let pos_space = memchr3(b'\t', b'\r', b'\n', value.as_bytes());
+        let pos = memchr4(b'&', b'\t', b'\r', b'\n', value.as_bytes());
 
-        if pos_entity.is_none() && pos_space.is_none() {
+        if pos.is_none() {
             return self.doc.strings.borrowed(value);
         }
 
         let mut strings = self.doc.strings.take();
         let mut buf = StringBuf::new(&mut strings, value.len());
 
-        self.normalize_attribute_value_impl(tokenizer, value, pos_entity, pos_space, &mut buf)?;
+        self.normalize_attribute_value_impl(tokenizer, value, pos, &mut buf)?;
 
         let value = buf.finish()?;
         self.doc.strings = strings;
@@ -441,88 +440,60 @@ impl<'input> Parser<'input> {
         &mut self,
         tokenizer: &mut Tokenizer<'input>,
         mut value: &'input str,
-        mut pos_entity: Option<usize>,
-        mut pos_space: Option<usize>,
+        mut pos: Option<usize>,
         buf: &mut StringBuf<'_, 'input>,
     ) -> Result {
-        while let Some(mut pos) = pos_entity {
-            while let Some(pos1) = pos_space {
-                if pos1 >= pos {
-                    break;
-                }
-
-                let (before, after) = value.split_at(pos1);
-
-                buf.push_str(before);
-                buf.push(' ');
-
-                value = match after.as_bytes().get(1) {
-                    Some(b'\n') => {
-                        pos -= pos1 + 2;
-                        &after[2..]
-                    }
-                    _ => {
-                        pos -= pos1 + 1;
-                        &after[1..]
-                    }
-                };
-
-                pos_space = memchr3(b'\t', b'\r', b'\n', value.as_bytes());
-            }
-
-            let (before, after) = value.split_at(pos);
+        while let Some(pos1) = pos {
+            let (before, after) = value.split_at(pos1);
             buf.push_str(before);
-            value = &after[1..];
+            value = after;
 
-            let ref_ = tokenizer.with_text(&mut value, |tokenizer| tokenizer.parse_reference())?;
-
-            match ref_ {
-                Reference::Char(char_) => {
-                    let is_entity = self.entity_depth != 0;
-
-                    let char_ = match char_ {
-                        '\t' | '\r' | '\n' if is_entity => ' ',
-                        char_ => char_,
-                    };
-
-                    buf.push(char_);
+            match value.as_bytes() {
+                [b'\r', b'\n', ..] => {
+                    buf.push(' ');
+                    value = &value[2..];
                 }
-                Reference::Entity(name) => {
-                    let value = self.find_entity(name)?;
+                [b'\t' | b'\r' | b'\n', ..] => {
+                    buf.push(' ');
+                    value = &value[1..];
+                }
+                _ => {
+                    value = &value[1..];
 
-                    let pos_entity = memchr(b'&', value.as_bytes());
-                    let pos_space = memchr3(b'\t', b'\r', b'\n', value.as_bytes());
+                    let ref_ =
+                        tokenizer.with_text(&mut value, |tokenizer| tokenizer.parse_reference())?;
 
-                    if pos_entity.is_none() && pos_space.is_none() {
-                        buf.push_str(value);
-                    } else {
-                        self.open_entity()?;
+                    match ref_ {
+                        Reference::Char(char_) => {
+                            let is_entity = self.entity_depth != 0;
 
-                        self.normalize_attribute_value_impl(
-                            tokenizer, value, pos_entity, pos_space, buf,
-                        )?;
+                            let char_ = match char_ {
+                                '\t' | '\r' | '\n' if is_entity => ' ',
+                                char_ => char_,
+                            };
 
-                        self.close_entity();
+                            buf.push(char_);
+                        }
+                        Reference::Entity(name) => {
+                            let value = self.find_entity(name)?;
+
+                            let pos = memchr4(b'&', b'\t', b'\r', b'\n', value.as_bytes());
+
+                            if pos.is_none() {
+                                buf.push_str(value);
+                            } else {
+                                self.open_entity()?;
+
+                                self.normalize_attribute_value_impl(tokenizer, value, pos, buf)?;
+
+                                self.close_entity();
+                            }
+                        }
                     }
                 }
             }
 
-            pos_entity = memchr(b'&', value.as_bytes());
-            pos_space = memchr3(b'\t', b'\r', b'\n', value.as_bytes());
-        }
-
-        while let Some(pos) = pos_space {
-            let (before, after) = value.split_at(pos);
-
-            buf.push_str(before);
-            buf.push(' ');
-
-            value = match after.as_bytes().get(1) {
-                Some(b'\n') => &after[2..],
-                _ => &after[1..],
-            };
-
-            pos_space = memchr3(b'\t', b'\r', b'\n', value.as_bytes());
+            pos = memchr4(b'&', b'\t', b'\r', b'\n', value.as_bytes());
         }
 
         buf.push_str(value);
