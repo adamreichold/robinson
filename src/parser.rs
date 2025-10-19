@@ -424,10 +424,20 @@ impl<'input> Parser<'input> {
             return self.doc.strings.borrowed(value);
         }
 
+        self.normalize_attribute_value_impl(tokenizer, value, pos)
+    }
+
+    #[inline(never)]
+    fn normalize_attribute_value_impl(
+        &mut self,
+        tokenizer: &mut Tokenizer<'input>,
+        value: &'input str,
+        pos: Option<usize>,
+    ) -> Result<NodeId> {
         let mut strings = self.doc.strings.take();
         let mut buf = StringBuf::new(&mut strings, value.len());
 
-        self.normalize_attribute_value_impl(tokenizer, value, pos, &mut buf)?;
+        self.normalize_attribute_value_impl_recursive(tokenizer, value, pos, &mut buf)?;
 
         let value = buf.finish()?;
         self.doc.strings = strings;
@@ -435,8 +445,7 @@ impl<'input> Parser<'input> {
         Ok(value)
     }
 
-    #[inline(never)]
-    fn normalize_attribute_value_impl(
+    fn normalize_attribute_value_impl_recursive(
         &mut self,
         tokenizer: &mut Tokenizer<'input>,
         mut value: &'input str,
@@ -484,7 +493,9 @@ impl<'input> Parser<'input> {
                             } else {
                                 self.open_entity()?;
 
-                                self.normalize_attribute_value_impl(tokenizer, value, pos, buf)?;
+                                self.normalize_attribute_value_impl_recursive(
+                                    tokenizer, value, pos, buf,
+                                )?;
 
                                 self.close_entity();
                             }
