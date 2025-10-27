@@ -86,9 +86,11 @@ pub(crate) fn memchr(needle: u8, haystack: &[u8]) -> Option<usize> {
         {
             chunk.compare(M::splat(self.0))
         }
+
+        const UNROLL: usize = 4;
     }
 
-    memchr_impl(haystack, Unroll::<4>, One(needle))
+    memchr_impl(haystack, One(needle))
 }
 
 #[inline]
@@ -112,9 +114,11 @@ pub(crate) fn memchr2(needle1: u8, needle2: u8, haystack: &[u8]) -> Option<usize
 
             mask0.or(mask1)
         }
+
+        const UNROLL: usize = 2;
     }
 
-    memchr_impl(haystack, Unroll::<2>, Two(needle1, needle2))
+    memchr_impl(haystack, Two(needle1, needle2))
 }
 
 #[inline]
@@ -148,13 +152,11 @@ pub(crate) fn memchr4(
             let mask23 = mask2.or(mask3);
             mask01.or(mask23)
         }
+
+        const UNROLL: usize = 1;
     }
 
-    memchr_impl(
-        haystack,
-        Unroll::<1>,
-        Four(needle1, needle2, needle3, needle4),
-    )
+    memchr_impl(haystack, Four(needle1, needle2, needle3, needle4))
 }
 
 #[allow(dead_code)]
@@ -164,9 +166,9 @@ trait Needle: Copy {
     fn cmp_chunk<M>(self, chunk: M) -> M
     where
         M: Simd;
-}
 
-struct Unroll<const U: usize>;
+    const UNROLL: usize;
+}
 
 #[inline(always)]
 #[cfg(not(target_arch = "x86_64"))]
@@ -179,7 +181,7 @@ where
 
 #[inline(always)]
 #[cfg(all(target_arch = "x86_64", not(target_feature = "avx2")))]
-fn memchr_impl<const U: usize, N>(haystack: &[u8], _u: Unroll<U>, n: N) -> Option<usize>
+fn memchr_impl<N>(haystack: &[u8], n: N) -> Option<usize>
 where
     N: Needle,
 {
@@ -192,12 +194,12 @@ where
         return Some(pos);
     }
 
-    memchr_impl_unrolled::<U, __m128i, N>(haystack, n)
+    memchr_impl_unrolled::<__m128i, N>(haystack, n)
 }
 
 #[inline(always)]
 #[cfg(all(target_arch = "x86_64", target_feature = "avx2"))]
-fn memchr_impl<const U: usize, N>(haystack: &[u8], _u: Unroll<U>, n: N) -> Option<usize>
+fn memchr_impl<N>(haystack: &[u8], n: N) -> Option<usize>
 where
     N: Needle,
 {
@@ -213,7 +215,7 @@ where
         return Some(pos);
     }
 
-    memchr_impl_unrolled::<U, __m256i, N>(haystack, n)
+    memchr_impl_unrolled::<__m256i, N>(haystack, n)
 }
 
 #[inline(always)]
@@ -267,7 +269,7 @@ where
 }
 
 #[cfg(target_arch = "x86_64")]
-fn memchr_impl_unrolled<const U: usize, M, N>(haystack: &[u8], n: N) -> Option<usize>
+fn memchr_impl_unrolled<M, N>(haystack: &[u8], n: N) -> Option<usize>
 where
     M: Simd,
     N: Needle,
@@ -276,7 +278,7 @@ where
     // and `align_to` ensures sufficient alignment.
     let (_prefix, aligned, suffix) = unsafe { haystack.align_to::<M>() };
 
-    let rest = if U == 4 {
+    let rest = if N::UNROLL == 4 {
         let (chunks, rest) = aligned.as_chunks::<4>();
 
         for chunks @ [chunk0, chunk1, chunk2, chunk3] in chunks {
@@ -321,7 +323,7 @@ where
         }
 
         rest
-    } else if U == 2 {
+    } else if N::UNROLL == 2 {
         let (chunks, rest) = aligned.as_chunks::<2>();
 
         for chunks @ [chunk0, chunk1] in chunks {
@@ -348,7 +350,7 @@ where
         }
 
         rest
-    } else if U == 1 {
+    } else if N::UNROLL == 1 {
         aligned
     } else {
         unimplemented!()
