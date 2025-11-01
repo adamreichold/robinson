@@ -9,15 +9,17 @@ use crate::{
 impl<'doc, 'input> Node<'doc, 'input> {
     pub fn has_attributes(self) -> bool {
         self.element_data()
-            .is_some_and(|element| element.attributes_start < element.attributes_end)
+            .is_some_and(|element| element.attributes_len != 0)
     }
 
     pub fn attributes(self) -> Attributes<'doc, 'input> {
         let data = self
             .element_data()
             .map(|element| {
-                &self.doc.attributes
-                    [element.attributes_start as usize..element.attributes_end as usize]
+                let start = element.attributes_start as usize;
+                let end = start + element.attributes_len as usize;
+
+                &self.doc.attributes[start..end]
             })
             .unwrap_or_default();
 

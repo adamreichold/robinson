@@ -1,5 +1,3 @@
-use std::ops::Range;
-
 use crate::{
     Document, DocumentBuilder, NameData,
     attributes::AttributeData,
@@ -134,7 +132,7 @@ impl<'input> Parser<'input> {
     }
 
     pub(crate) fn close_empty_element(&mut self, tokenizer: &Tokenizer<'input>) -> Result {
-        let attributes = self.resolve_attributes()?;
+        let (attributes_start, attributes_len) = self.resolve_attributes()?;
 
         let Some(element) = self.element.take() else {
             return ErrorKind::UnexpectedCloseElement.into();
@@ -147,8 +145,8 @@ impl<'input> Parser<'input> {
                 namespace,
                 local: element.local,
             },
-            attributes_start: attributes.start,
-            attributes_end: attributes.end,
+            attributes_start,
+            attributes_len,
         })?;
 
         self.subtree.push(id);
@@ -194,7 +192,7 @@ impl<'input> Parser<'input> {
     }
 
     pub(crate) fn close_open_element(&mut self) -> Result {
-        let attributes = self.resolve_attributes()?;
+        let (attributes_start, attributes_len) = self.resolve_attributes()?;
 
         let Some(element) = self.element.take() else {
             return ErrorKind::UnexpectedCloseElement.into();
@@ -207,8 +205,8 @@ impl<'input> Parser<'input> {
                 namespace,
                 local: element.local,
             },
-            attributes_start: attributes.start,
-            attributes_end: attributes.end,
+            attributes_start,
+            attributes_len,
         })?;
 
         self.parent = id;
@@ -498,11 +496,11 @@ impl<'input> Parser<'input> {
         Ok(())
     }
 
-    fn resolve_attributes(&mut self) -> Result<Range<u32>> {
-        let old_len = self.doc.attributes.len();
-        let new_len = old_len + self.attributes.len();
+    fn resolve_attributes(&mut self) -> Result<(u32, u16)> {
+        let start = self.doc.attributes.len();
+        let len = self.attributes.len();
 
-        if new_len > u32::MAX as usize {
+        if start > u32::MAX as usize || len > u16::MAX as usize {
             return ErrorKind::TooManyAttributes.into();
         }
 
@@ -524,7 +522,7 @@ impl<'input> Parser<'input> {
 
         self.attributes.clear();
 
-        Ok(old_len as u32..new_len as u32)
+        Ok((start as u32, len as u16))
     }
 
     pub(crate) fn push_entity(&mut self, name: &'input str, value: &'input str) {

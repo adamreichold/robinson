@@ -313,12 +313,12 @@ const _SIZE_OF_NODE_DATA: () = assert!(size_of::<NodeData>() == 3 * size_of::<us
 pub(crate) struct ElementData<'input> {
     pub(crate) name: NameData<'input>,
     pub(crate) attributes_start: u32,
-    pub(crate) attributes_end: u32,
+    pub(crate) attributes_len: u16,
 }
 
 const _SIZE_OF_ELEMENT_DATA: () = assert!(
     size_of::<ElementData<'static>>()
-        == size_of::<u16>() + 2 * size_of::<usize>() + 2 * size_of::<u32>()
+        == size_of::<u16>() + 2 * size_of::<usize>() + size_of::<u32>() + size_of::<u16>()
 );
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
