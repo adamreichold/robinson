@@ -5,15 +5,67 @@ use test::{Bencher, black_box};
 
 use std::fs::read_to_string;
 
-use robinson::Document;
-
 macro_rules! bench {
     ($name:ident) => {
-        #[bench]
-        fn $name(bencher: &mut Bencher) {
-            let text = read_to_string(format!("benches/inputs/{}.xml", stringify!($name))).unwrap();
+        mod $name {
+            use super::*;
 
-            bencher.iter(|| Document::parse(black_box(&text)).unwrap());
+            #[bench]
+            fn robinson(bencher: &mut Bencher) {
+                use robinson::Document;
+
+                let text =
+                    read_to_string(format!("benches/inputs/{}.xml", stringify!($name))).unwrap();
+
+                bencher.iter(|| Document::parse(black_box(&text)).unwrap());
+            }
+
+            #[bench]
+            fn roxmltree(bencher: &mut Bencher) {
+                use roxmltree::{Document, ParsingOptions};
+
+                let text =
+                    read_to_string(format!("benches/inputs/{}.xml", stringify!($name))).unwrap();
+
+                bencher.iter(|| {
+                    Document::parse_with_options(
+                        black_box(&text),
+                        ParsingOptions {
+                            allow_dtd: true,
+                            ..Default::default()
+                        },
+                    )
+                    .unwrap()
+                });
+            }
+
+            #[bench]
+            fn quickxml(bencher: &mut Bencher) {
+                use quick_xml::{events::Event, reader::NsReader};
+
+                let text =
+                    read_to_string(format!("benches/inputs/{}.xml", stringify!($name))).unwrap();
+
+                bencher.iter(|| {
+                    let mut reader = NsReader::from_str(black_box(&text));
+
+                    let mut elements = 0;
+                    let mut attributes = 0;
+
+                    loop {
+                        match reader.read_resolved_event().unwrap() {
+                            (_, Event::Start(start)) => {
+                                elements += 1;
+                                attributes += start.attributes().count();
+                            }
+                            (_, Event::Eof) => break,
+                            _ => (),
+                        }
+                    }
+
+                    (elements, attributes)
+                });
+            }
         }
     };
 }

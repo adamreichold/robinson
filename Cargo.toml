@@ -22,6 +22,8 @@ serde_core = { version = "1", optional = true }
 [dev-dependencies]
 pretty_assertions = "1"
 proptest = "1"
+quick-xml = "0.38"
+roxmltree = { version = "0.21", default-features = false }
 serde = { version = "1", features = ["derive"] }
 
 [package.metadata.docs.rs]
