@@ -143,7 +143,7 @@ impl<'doc, 'input> Node<'doc, 'input> {
     pub fn next_sibling(self) -> Option<Self> {
         self.data
             .next_subtree
-            .filter(|id| self.doc.nodes[id.get()].prev_sibling.unwrap() == self.id)
+            .filter(|id| self.doc.nodes[id.get()].prev_sibling == Some(self.id))
             .map(|id| self.other(id))
     }
 
