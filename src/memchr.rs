@@ -172,7 +172,7 @@ trait Needle: Copy {
 
 #[inline(always)]
 #[cfg(not(target_arch = "x86_64"))]
-fn memchr_impl<const U: usize, N>(haystack: &[u8], _u: Unroll<U>, n: N) -> Option<usize>
+fn memchr_impl<N>(haystack: &[u8], n: N) -> Option<usize>
 where
     N: Needle,
 {
