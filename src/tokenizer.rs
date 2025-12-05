@@ -1,27 +1,10 @@
-#[cfg(all(
-    target_arch = "aarch64",
-    target_feature = "neon",
-    target_endian = "little"
-))]
+#[cfg(simd_neon)]
 use core::arch::aarch64::*;
-#[cfg(all(
-    target_arch = "x86_64",
-    any(target_feature = "ssse3", target_feature = "avx2")
-))]
+#[cfg(any(simd_ssse3, simd_avx2))]
 use std::arch::x86_64::*;
 use std::mem::swap;
 
-#[cfg(any(
-    all(
-        target_arch = "x86_64",
-        any(target_feature = "ssse3", target_feature = "avx2")
-    ),
-    all(
-        target_arch = "aarch64",
-        target_feature = "neon",
-        target_endian = "little"
-    )
-))]
+#[cfg(any(simd_ssse3, simd_avx2, simd_neon))]
 use crate::memchr::Simd;
 use crate::{
     error::{Error, ErrorKind, Result},
@@ -373,33 +356,16 @@ impl<'input> Tokenizer<'input> {
         let mut pos = 0;
         let mut prefix_pos = None;
 
-        #[cfg(not(any(
-            all(
-                target_arch = "x86_64",
-                any(target_feature = "ssse3", target_feature = "avx2")
-            ),
-            all(
-                target_arch = "aarch64",
-                target_feature = "neon",
-                target_endian = "little"
-            )
-        )))]
+        #[cfg(not(any(simd_ssse3, simd_avx2, simd_neon)))]
         parse_qualname_impl(self.text, &mut pos, &mut prefix_pos)?;
 
-        #[cfg(all(
-            target_arch = "x86_64",
-            all(target_feature = "ssse3", not(target_feature = "avx2"))
-        ))]
+        #[cfg(simd_ssse3)]
         parse_qualname_impl_simd::<__m128i>(self.text, &mut pos, &mut prefix_pos)?;
 
-        #[cfg(all(target_arch = "x86_64", target_feature = "avx2"))]
+        #[cfg(simd_avx2)]
         parse_qualname_impl_simd::<__m256i>(self.text, &mut pos, &mut prefix_pos)?;
 
-        #[cfg(all(
-            target_arch = "aarch64",
-            target_feature = "neon",
-            target_endian = "little"
-        ))]
+        #[cfg(simd_neon)]
         parse_qualname_impl_simd::<uint8x16_t>(self.text, &mut pos, &mut prefix_pos)?;
 
         // SAFETY: `parse_qualname_impl*` guarantees an ASCII character at `pos`.
@@ -526,48 +492,9 @@ impl<'input> Tokenizer<'input> {
     }
 }
 
-#[cfg_attr(
-    any(
-        all(
-            target_arch = "x86_64",
-            any(target_feature = "ssse3", target_feature = "avx2")
-        ),
-        all(
-            target_arch = "aarch64",
-            target_feature = "neon",
-            target_endian = "little"
-        )
-    ),
-    cold
-)]
-#[cfg_attr(
-    any(
-        all(
-            target_arch = "x86_64",
-            any(target_feature = "ssse3", target_feature = "avx2")
-        ),
-        all(
-            target_arch = "aarch64",
-            target_feature = "neon",
-            target_endian = "little"
-        )
-    ),
-    inline(never)
-)]
-#[cfg_attr(
-    not(any(
-        all(
-            target_arch = "x86_64",
-            any(target_feature = "ssse3", target_feature = "avx2")
-        ),
-        all(
-            target_arch = "aarch64",
-            target_feature = "neon",
-            target_endian = "little"
-        )
-    )),
-    inline(always)
-)]
+#[cfg_attr(any(simd_ssse3, simd_avx2, simd_neon), cold)]
+#[cfg_attr(any(simd_ssse3, simd_avx2, simd_neon), inline(never))]
+#[cfg_attr(not(any(simd_ssse3, simd_avx2, simd_neon)), inline(always))]
 fn parse_qualname_impl(text: &str, pos: &mut usize, prefix_pos: &mut Option<usize>) -> Result {
     loop {
         match text.as_bytes().get(*pos) {
@@ -585,17 +512,7 @@ fn parse_qualname_impl(text: &str, pos: &mut usize, prefix_pos: &mut Option<usiz
 
 #[inline(always)]
 #[allow(unsafe_code)]
-#[cfg(any(
-    all(
-        target_arch = "x86_64",
-        any(target_feature = "ssse3", target_feature = "avx2")
-    ),
-    all(
-        target_arch = "aarch64",
-        target_feature = "neon",
-        target_endian = "little"
-    )
-))]
+#[cfg(any(simd_ssse3, simd_avx2, simd_neon))]
 fn parse_qualname_impl_simd<M>(
     text: &str,
     pos: &mut usize,
@@ -696,28 +613,15 @@ where
 }
 
 #[cfg(all(test, not(miri)))]
-#[cfg(any(
-    all(
-        target_arch = "x86_64",
-        any(target_feature = "ssse3", target_feature = "avx2")
-    ),
-    all(
-        target_arch = "aarch64",
-        target_feature = "neon",
-        target_endian = "little"
-    )
-))]
+#[cfg(any(simd_ssse3, simd_avx2, simd_neon))]
 mod tests {
     use super::*;
 
     use proptest::test_runner::TestRunner;
 
     #[test]
-    #[cfg(all(
-        target_arch = "x86_64",
-        all(target_feature = "ssse3", not(target_feature = "avx2"))
-    ))]
-    fn parse_qualname_impl_ssse3_works() {
+    #[cfg(any(simd_ssse3, simd_avx2, simd_neon))]
+    fn parse_qualname_impl_simd_works() {
         TestRunner::default()
             .run(&".{0,200}", |text| {
                 let mut pos1 = 0;
@@ -726,76 +630,14 @@ mod tests {
 
                 let mut pos2 = 0;
                 let mut prefix_pos2 = None;
+
+                #[cfg(simd_ssse3)]
                 let res2 = parse_qualname_impl_simd::<__m128i>(&text, &mut pos2, &mut prefix_pos2);
 
-                match (res1, res2) {
-                    (Ok(()), Ok(())) => {
-                        assert_eq!(pos1, pos2);
-                        match (prefix_pos1, prefix_pos2) {
-                            (Some(prefix_pos1), Some(prefix_pos2)) => {
-                                assert_eq!(text.as_bytes()[prefix_pos1], b':');
-                                assert_eq!(text.as_bytes()[prefix_pos2], b':');
-                            }
-                            (None, None) => (),
-                            _ => panic!(),
-                        }
-                    }
-                    (Err(_), Err(_)) => (),
-                    _ => panic!(),
-                }
-                Ok(())
-            })
-            .unwrap();
-    }
-
-    #[test]
-    #[cfg(all(target_arch = "x86_64", target_feature = "avx2"))]
-    fn parse_qualname_impl_avx2_works() {
-        TestRunner::default()
-            .run(&".{0,200}", |text| {
-                let mut pos1 = 0;
-                let mut prefix_pos1 = None;
-                let res1 = parse_qualname_impl(&text, &mut pos1, &mut prefix_pos1);
-
-                let mut pos2 = 0;
-                let mut prefix_pos2 = None;
+                #[cfg(simd_avx2)]
                 let res2 = parse_qualname_impl_simd::<__m256i>(&text, &mut pos2, &mut prefix_pos2);
 
-                match (res1, res2) {
-                    (Ok(()), Ok(())) => {
-                        assert_eq!(pos1, pos2);
-                        match (prefix_pos1, prefix_pos2) {
-                            (Some(prefix_pos1), Some(prefix_pos2)) => {
-                                assert_eq!(text.as_bytes()[prefix_pos1], b':');
-                                assert_eq!(text.as_bytes()[prefix_pos2], b':');
-                            }
-                            (None, None) => (),
-                            _ => panic!(),
-                        }
-                    }
-                    (Err(_), Err(_)) => (),
-                    _ => panic!(),
-                }
-                Ok(())
-            })
-            .unwrap();
-    }
-
-    #[test]
-    #[cfg(all(
-        target_arch = "aarch64",
-        target_feature = "neon",
-        target_endian = "little"
-    ))]
-    fn parse_qualname_impl_neon_works() {
-        TestRunner::default()
-            .run(&".{0,200}", |text| {
-                let mut pos1 = 0;
-                let mut prefix_pos1 = None;
-                let res1 = parse_qualname_impl(&text, &mut pos1, &mut prefix_pos1);
-
-                let mut pos2 = 0;
-                let mut prefix_pos2 = None;
+                #[cfg(simd_neon)]
                 let res2 =
                     parse_qualname_impl_simd::<uint8x16_t>(&text, &mut pos2, &mut prefix_pos2);
 

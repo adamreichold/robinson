@@ -1,10 +1,6 @@
 #![allow(unsafe_code)]
 
-#[cfg(all(
-    target_arch = "aarch64",
-    target_feature = "neon",
-    target_endian = "little"
-))]
+#[cfg(simd_neon)]
 use core::arch::aarch64::*;
 #[cfg(target_arch = "x86_64")]
 use std::arch::x86_64::*;
@@ -177,14 +173,7 @@ trait Needle: Copy {
 }
 
 #[inline(always)]
-#[cfg(not(any(
-    target_arch = "x86_64",
-    all(
-        target_arch = "aarch64",
-        target_feature = "neon",
-        target_endian = "little"
-    )
-)))]
+#[cfg(not(any(simd_sse2, simd_avx2, simd_neon)))]
 fn memchr_impl<N>(haystack: &[u8], n: N) -> Option<usize>
 where
     N: Needle,
@@ -193,7 +182,7 @@ where
 }
 
 #[inline(always)]
-#[cfg(all(target_arch = "x86_64", not(target_feature = "avx2")))]
+#[cfg(simd_sse2)]
 fn memchr_impl<N>(haystack: &[u8], n: N) -> Option<usize>
 where
     N: Needle,
@@ -202,7 +191,7 @@ where
 }
 
 #[inline(always)]
-#[cfg(all(target_arch = "x86_64", target_feature = "avx2"))]
+#[cfg(simd_avx2)]
 fn memchr_impl<N>(haystack: &[u8], n: N) -> Option<usize>
 where
     N: Needle,
@@ -211,11 +200,7 @@ where
 }
 
 #[inline(always)]
-#[cfg(all(
-    target_arch = "aarch64",
-    target_feature = "neon",
-    target_endian = "little"
-))]
+#[cfg(simd_neon)]
 fn memchr_impl<N>(haystack: &[u8], n: N) -> Option<usize>
 where
     N: Needle,
@@ -224,14 +209,7 @@ where
 }
 
 #[inline(always)]
-#[cfg(any(
-    all(target_arch = "x86_64", not(target_feature = "avx2")),
-    all(
-        target_arch = "aarch64",
-        target_feature = "neon",
-        target_endian = "little"
-    )
-))]
+#[cfg(any(simd_sse2, simd_neon))]
 fn memchr_impl_16<M16, N>(haystack: &[u8], n: N) -> Option<usize>
 where
     M16: Simd,
@@ -254,7 +232,7 @@ where
 }
 
 #[inline(always)]
-#[cfg(all(target_arch = "x86_64", target_feature = "avx2"))]
+#[cfg(simd_avx2)]
 fn memchr_impl_32<M16, M32, N>(haystack: &[u8], n: N) -> Option<usize>
 where
     M16: Simd,
@@ -282,14 +260,7 @@ where
 }
 
 #[inline(always)]
-#[cfg(any(
-    target_arch = "x86_64",
-    all(
-        target_arch = "aarch64",
-        target_feature = "neon",
-        target_endian = "little"
-    )
-))]
+#[cfg(any(simd_sse2, simd_avx2, simd_neon))]
 unsafe fn memchr_impl_unaligned<M, N>(haystack: *const u8, n: N) -> Option<usize>
 where
     M: Simd,
@@ -308,7 +279,7 @@ where
 }
 
 #[inline(always)]
-#[cfg(all(target_arch = "x86_64", target_feature = "avx2"))]
+#[cfg(simd_avx2)]
 fn memchr_impl_overlapped<M, N>(haystack: &[u8], n: N) -> Option<usize>
 where
     M: Simd,
@@ -338,14 +309,7 @@ where
     }
 }
 
-#[cfg(any(
-    target_arch = "x86_64",
-    all(
-        target_arch = "aarch64",
-        target_feature = "neon",
-        target_endian = "little"
-    )
-))]
+#[cfg(any(simd_sse2, simd_avx2, simd_neon))]
 fn memchr_impl_unrolled<M, N>(haystack: &[u8], n: N) -> Option<usize>
 where
     M: Simd,
@@ -465,28 +429,17 @@ pub(crate) fn memchr2_count(needle1: u8, needle2: u8, haystack: &[u8]) -> (usize
     let mut count1 = 0;
     let mut count2 = 0;
 
-    #[cfg(all(target_arch = "x86_64", target_feature = "avx2"))]
-    memchr2_count_impl_simd::<__m256i>(needle1, needle2, haystack, &mut count1, &mut count2);
+    #[cfg(not(any(simd_sse2, simd_avx2, simd_neon)))]
+    memchr2_count_impl(needle1, needle2, haystack, &mut count1, &mut count2);
 
-    #[cfg(all(target_arch = "x86_64", not(target_feature = "avx2")))]
+    #[cfg(simd_sse2)]
     memchr2_count_impl_simd::<__m128i>(needle1, needle2, haystack, &mut count1, &mut count2);
 
-    #[cfg(all(
-        target_arch = "aarch64",
-        target_feature = "neon",
-        target_endian = "little"
-    ))]
-    memchr2_count_impl_simd::<uint8x16_t>(needle1, needle2, haystack, &mut count1, &mut count2);
+    #[cfg(simd_avx2)]
+    memchr2_count_impl_simd::<__m256i>(needle1, needle2, haystack, &mut count1, &mut count2);
 
-    #[cfg(not(any(
-        target_arch = "x86_64",
-        all(
-            target_arch = "aarch64",
-            target_feature = "neon",
-            target_endian = "little"
-        )
-    )))]
-    memchr2_count_impl(needle1, needle2, haystack, &mut count1, &mut count2);
+    #[cfg(simd_neon)]
+    memchr2_count_impl_simd::<uint8x16_t>(needle1, needle2, haystack, &mut count1, &mut count2);
 
     (count1, count2)
 }
@@ -506,14 +459,7 @@ fn memchr2_count_impl(
 }
 
 #[inline(always)]
-#[cfg(any(
-    target_arch = "x86_64",
-    all(
-        target_arch = "aarch64",
-        target_feature = "neon",
-        target_endian = "little"
-    )
-))]
+#[cfg(any(simd_sse2, simd_avx2, simd_neon))]
 fn memchr2_count_impl_simd<M>(
     needle1: u8,
     needle2: u8,
@@ -669,7 +615,7 @@ unsafe impl Simd for __m128i {
 }
 
 // SAFETY: Conditional compilation ensures that the `avx2` target feature is available.
-#[cfg(all(target_arch = "x86_64", target_feature = "avx2"))]
+#[cfg(simd_avx2)]
 unsafe impl Simd for __m256i {
     const BYTES: usize = 32;
 
@@ -746,11 +692,7 @@ unsafe impl Simd for __m256i {
 }
 
 // SAFETY: Conditional compilation ensures that the `neon` target feature is available.
-#[cfg(all(
-    target_arch = "aarch64",
-    target_feature = "neon",
-    target_endian = "little"
-))]
+#[cfg(simd_neon)]
 unsafe impl Simd for uint8x16_t {
     const BYTES: usize = 16;
 
@@ -815,28 +757,21 @@ unsafe impl Simd for uint8x16_t {
 
     #[inline(always)]
     fn first_set(mask: Self::Mask) -> usize {
-        mask.trailing_zeros() as usize / 4
+        mask.trailing_zeros() as usize >> 2
     }
 
     #[inline(always)]
     fn first_unset(mask: Self::Mask) -> usize {
-        mask.trailing_ones() as usize / 4
+        mask.trailing_ones() as usize >> 2
     }
 
     #[inline(always)]
     fn count_set(mask: Self::Mask) -> usize {
-        mask.count_ones() as usize / 4
+        mask.count_ones() as usize >> 2
     }
 }
 
-#[cfg(any(
-    target_arch = "x86_64",
-    all(
-        target_arch = "aarch64",
-        target_feature = "neon",
-        target_endian = "little"
-    )
-))]
+#[cfg(any(simd_sse2, simd_avx2, simd_neon))]
 #[cold]
 #[inline(always)]
 fn cold() {}

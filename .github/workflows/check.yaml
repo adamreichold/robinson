@@ -13,7 +13,10 @@ jobs:
     - uses: dtolnay/rust-toolchain@nightly
       with:
         components: rustfmt, clippy
+        targets: s390x-unknown-linux-gnu
 
     - run: cargo fmt -- --check
 
     - run: cargo clippy --workspace --all-features --all-targets -- --deny warnings --allow clippy::collapsible-if
+
+    - run: cargo check --target s390x-unknown-linux-gnu
