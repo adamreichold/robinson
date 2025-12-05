@@ -230,8 +230,8 @@ where
 
     let mask = n.cmp_chunk(chunk).movemask();
 
-    if mask != 0 {
-        Some(mask.trailing_zeros() as usize)
+    if mask != M::NONE {
+        Some(M::first_set(mask))
     } else {
         None
     }
@@ -255,14 +255,14 @@ where
 
     let mask = mask0.or(mask1);
 
-    if mask.nonzero() {
+    if mask.any() {
         let mask0 = mask0.movemask();
-        if mask0 != 0 {
-            return Some(mask0.trailing_zeros() as usize);
+        if mask0 != M::NONE {
+            return Some(M::first_set(mask0));
         }
 
         let mask1 = mask1.movemask();
-        Some(pos + mask1.trailing_zeros() as usize)
+        Some(pos + M::first_set(mask1))
     } else {
         None
     }
@@ -291,34 +291,34 @@ where
             let mask23 = mask2.or(mask3);
             let mask = mask01.or(mask23);
 
-            if mask.nonzero() {
+            if mask.any() {
                 cold();
 
                 let mut pos = chunks.as_ptr().addr() - haystack.as_ptr().addr();
 
                 let mask0 = mask0.movemask();
-                if mask0 != 0 {
-                    return Some(pos + mask0.trailing_zeros() as usize);
+                if mask0 != M::NONE {
+                    return Some(pos + M::first_set(mask0));
                 } else {
                     pos += M::BYTES;
                 }
 
                 let mask1 = mask1.movemask();
-                if mask1 != 0 {
-                    return Some(pos + mask1.trailing_zeros() as usize);
+                if mask1 != M::NONE {
+                    return Some(pos + M::first_set(mask1));
                 } else {
                     pos += M::BYTES;
                 }
 
                 let mask2 = mask2.movemask();
-                if mask2 != 0 {
-                    return Some(pos + mask2.trailing_zeros() as usize);
+                if mask2 != M::NONE {
+                    return Some(pos + M::first_set(mask2));
                 } else {
                     pos += M::BYTES;
                 }
 
                 let mask3 = mask3.movemask();
-                return Some(pos + mask3.trailing_zeros() as usize);
+                return Some(pos + M::first_set(mask3));
             }
         }
 
@@ -332,20 +332,20 @@ where
 
             let mask = mask0.or(mask1);
 
-            if mask.nonzero() {
+            if mask.any() {
                 cold();
 
                 let mut pos = chunks.as_ptr().addr() - haystack.as_ptr().addr();
 
                 let mask0 = mask0.movemask();
-                if mask0 != 0 {
-                    return Some(pos + mask0.trailing_zeros() as usize);
+                if mask0 != M::NONE {
+                    return Some(pos + M::first_set(mask0));
                 } else {
                     pos += M::BYTES;
                 }
 
                 let mask1 = mask1.movemask();
-                return Some(pos + mask1.trailing_zeros() as usize);
+                return Some(pos + M::first_set(mask1));
             }
         }
 
@@ -359,12 +359,12 @@ where
     for chunk in rest {
         let mask = n.cmp_chunk(*chunk).movemask();
 
-        if mask != 0 {
+        if mask != M::NONE {
             cold();
 
             let pos = (chunk as *const M).addr() - haystack.as_ptr().addr();
 
-            return Some(pos + mask.trailing_zeros() as usize);
+            return Some(pos + M::first_set(mask));
         }
     }
 
@@ -435,8 +435,8 @@ fn memchr2_count_impl_simd<M>(
         let hits1 = chunk.compare(M::splat(needle1)).movemask();
         let hits2 = chunk.compare(M::splat(needle2)).movemask();
 
-        *count1 += hits1.count_ones() as usize;
-        *count2 += hits2.count_ones() as usize;
+        *count1 += M::count_set(hits1);
+        *count2 += M::count_set(hits2);
     }
 
     memchr2_count_impl(needle1, needle2, suffix, count1, count2);
@@ -446,7 +446,11 @@ fn memchr2_count_impl_simd<M>(
 pub(crate) unsafe trait Simd: Copy {
     const BYTES: usize;
 
-    const ALL: u32;
+    type Mask: PartialEq;
+
+    const NONE: Self::Mask;
+
+    const ALL: Self::Mask;
 
     fn splat(byte: u8) -> Self;
 
@@ -464,9 +468,15 @@ pub(crate) unsafe trait Simd: Copy {
 
     fn shuffle(self, _other: Self) -> Self;
 
-    fn movemask(self) -> u32;
+    fn any(self) -> bool;
 
-    fn nonzero(self) -> bool;
+    fn movemask(self) -> Self::Mask;
+
+    fn first_set(mask: Self::Mask) -> usize;
+
+    fn first_unset(mask: Self::Mask) -> usize;
+
+    fn count_set(mask: Self::Mask) -> usize;
 }
 
 // SAFETY: Conditional compilation ensures that the `sse2` target feature is available.
@@ -474,7 +484,11 @@ pub(crate) unsafe trait Simd: Copy {
 unsafe impl Simd for __m128i {
     const BYTES: usize = 16;
 
-    const ALL: u32 = 0xFF_FF;
+    type Mask = u32;
+
+    const NONE: Self::Mask = 0;
+
+    const ALL: Self::Mask = 0xFF_FF;
 
     #[inline(always)]
     fn splat(byte: u8) -> Self {
@@ -524,20 +538,35 @@ unsafe impl Simd for __m128i {
     }
 
     #[inline(always)]
-    fn movemask(self) -> u32 {
-        unsafe { _mm_movemask_epi8(self) as u32 }
-    }
-
-    #[inline(always)]
     #[cfg(target_feature = "sse4.1")]
-    fn nonzero(self) -> bool {
+    fn any(self) -> bool {
         unsafe { _mm_testz_si128(self, self) == 0 }
     }
 
     #[inline(always)]
     #[cfg(not(target_feature = "sse4.1"))]
-    fn nonzero(self) -> bool {
+    fn any(self) -> bool {
         self.movemask() != 0
+    }
+
+    #[inline(always)]
+    fn movemask(self) -> Self::Mask {
+        unsafe { _mm_movemask_epi8(self) as u32 }
+    }
+
+    #[inline(always)]
+    fn first_set(mask: Self::Mask) -> usize {
+        mask.trailing_zeros() as usize
+    }
+
+    #[inline(always)]
+    fn first_unset(mask: Self::Mask) -> usize {
+        mask.trailing_ones() as usize
+    }
+
+    #[inline(always)]
+    fn count_set(mask: Self::Mask) -> usize {
+        mask.count_ones() as usize
     }
 }
 
@@ -546,7 +575,11 @@ unsafe impl Simd for __m128i {
 unsafe impl Simd for __m256i {
     const BYTES: usize = 32;
 
-    const ALL: u32 = 0xFF_FF_FF_FF;
+    type Mask = u32;
+
+    const NONE: Self::Mask = 0;
+
+    const ALL: Self::Mask = 0xFF_FF_FF_FF;
 
     #[inline(always)]
     fn splat(byte: u8) -> Self {
@@ -589,13 +622,28 @@ unsafe impl Simd for __m256i {
     }
 
     #[inline(always)]
-    fn movemask(self) -> u32 {
+    fn any(self) -> bool {
+        unsafe { _mm256_testz_si256(self, self) == 0 }
+    }
+
+    #[inline(always)]
+    fn movemask(self) -> Self::Mask {
         unsafe { _mm256_movemask_epi8(self) as u32 }
     }
 
     #[inline(always)]
-    fn nonzero(self) -> bool {
-        unsafe { _mm256_testz_si256(self, self) == 0 }
+    fn first_set(mask: Self::Mask) -> usize {
+        mask.trailing_zeros() as usize
+    }
+
+    #[inline(always)]
+    fn first_unset(mask: Self::Mask) -> usize {
+        mask.trailing_ones() as usize
+    }
+
+    #[inline(always)]
+    fn count_set(mask: Self::Mask) -> usize {
+        mask.count_ones() as usize
     }
 }
 

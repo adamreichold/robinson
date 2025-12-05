@@ -615,10 +615,10 @@ where
         let cl_mask = cl_mask.movemask();
 
         if mask != M::ALL {
-            let off = mask.trailing_ones() as usize;
+            let off = M::first_unset(mask);
 
-            if cl_mask != 0 {
-                let cl_off = cl_mask.trailing_zeros() as usize;
+            if cl_mask != M::NONE {
+                let cl_off = M::first_set(cl_mask);
 
                 if cl_off < off {
                     *prefix_pos = Some(*pos + cl_off);
@@ -630,8 +630,8 @@ where
             return Ok(());
         }
 
-        if cl_mask != 0 {
-            *prefix_pos = Some(*pos + cl_mask.trailing_zeros() as usize);
+        if cl_mask != M::NONE {
+            *prefix_pos = Some(*pos + M::first_set(cl_mask));
         }
 
         *pos += M::BYTES;
