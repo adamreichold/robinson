@@ -1,5 +1,11 @@
 #![allow(unsafe_code)]
 
+#[cfg(all(
+    target_arch = "aarch64",
+    target_feature = "neon",
+    target_endian = "little"
+))]
+use core::arch::aarch64::*;
 #[cfg(target_arch = "x86_64")]
 use std::arch::x86_64::*;
 
@@ -171,7 +177,14 @@ trait Needle: Copy {
 }
 
 #[inline(always)]
-#[cfg(not(target_arch = "x86_64"))]
+#[cfg(not(any(
+    target_arch = "x86_64",
+    all(
+        target_arch = "aarch64",
+        target_feature = "neon",
+        target_endian = "little"
+    )
+)))]
 fn memchr_impl<N>(haystack: &[u8], n: N) -> Option<usize>
 where
     N: Needle,
@@ -185,16 +198,7 @@ fn memchr_impl<N>(haystack: &[u8], n: N) -> Option<usize>
 where
     N: Needle,
 {
-    if haystack.len() < 16 {
-        return haystack.iter().position(move |&byte| n.cmp_byte(byte));
-    }
-
-    // SAFETY: `haystack` points to at least 16 bytes of valid data.
-    if let Some(pos) = unsafe { memchr_impl_unaligned::<__m128i, N>(haystack.as_ptr(), n) } {
-        return Some(pos);
-    }
-
-    memchr_impl_unrolled::<__m128i, N>(haystack, n)
+    memchr_impl_16::<__m128i, N>(haystack, n)
 }
 
 #[inline(always)]
@@ -203,23 +207,89 @@ fn memchr_impl<N>(haystack: &[u8], n: N) -> Option<usize>
 where
     N: Needle,
 {
+    memchr_impl_32::<__m128i, __m256i, N>(haystack, n)
+}
+
+#[inline(always)]
+#[cfg(all(
+    target_arch = "aarch64",
+    target_feature = "neon",
+    target_endian = "little"
+))]
+fn memchr_impl<N>(haystack: &[u8], n: N) -> Option<usize>
+where
+    N: Needle,
+{
+    memchr_impl_16::<uint8x16_t, N>(haystack, n)
+}
+
+#[inline(always)]
+#[cfg(any(
+    all(target_arch = "x86_64", not(target_feature = "avx2")),
+    all(
+        target_arch = "aarch64",
+        target_feature = "neon",
+        target_endian = "little"
+    )
+))]
+fn memchr_impl_16<M16, N>(haystack: &[u8], n: N) -> Option<usize>
+where
+    M16: Simd,
+    N: Needle,
+{
+    const {
+        assert!(M16::BYTES == 16);
+    }
+
+    if haystack.len() < 16 {
+        return haystack.iter().position(move |&byte| n.cmp_byte(byte));
+    }
+
+    // SAFETY: `haystack` points to at least 16 bytes of valid data.
+    if let Some(pos) = unsafe { memchr_impl_unaligned::<M16, N>(haystack.as_ptr(), n) } {
+        return Some(pos);
+    }
+
+    memchr_impl_unrolled::<M16, N>(haystack, n)
+}
+
+#[inline(always)]
+#[cfg(all(target_arch = "x86_64", target_feature = "avx2"))]
+fn memchr_impl_32<M16, M32, N>(haystack: &[u8], n: N) -> Option<usize>
+where
+    M16: Simd,
+    M32: Simd,
+    N: Needle,
+{
+    const {
+        assert!(M16::BYTES == 16);
+        assert!(M32::BYTES == 32);
+    }
+
     if haystack.len() < 32 {
         return if haystack.len() >= 16 {
-            memchr_impl_overlapped::<__m128i, N>(haystack, n)
+            memchr_impl_overlapped::<M16, N>(haystack, n)
         } else {
             haystack.iter().position(move |&byte| n.cmp_byte(byte))
         };
     }
 
-    if let Some(pos) = unsafe { memchr_impl_unaligned::<__m256i, N>(haystack.as_ptr(), n) } {
+    if let Some(pos) = unsafe { memchr_impl_unaligned::<M32, N>(haystack.as_ptr(), n) } {
         return Some(pos);
     }
 
-    memchr_impl_unrolled::<__m256i, N>(haystack, n)
+    memchr_impl_unrolled::<M32, N>(haystack, n)
 }
 
 #[inline(always)]
-#[cfg(target_arch = "x86_64")]
+#[cfg(any(
+    target_arch = "x86_64",
+    all(
+        target_arch = "aarch64",
+        target_feature = "neon",
+        target_endian = "little"
+    )
+))]
 unsafe fn memchr_impl_unaligned<M, N>(haystack: *const u8, n: N) -> Option<usize>
 where
     M: Simd,
@@ -268,7 +338,14 @@ where
     }
 }
 
-#[cfg(target_arch = "x86_64")]
+#[cfg(any(
+    target_arch = "x86_64",
+    all(
+        target_arch = "aarch64",
+        target_feature = "neon",
+        target_endian = "little"
+    )
+))]
 fn memchr_impl_unrolled<M, N>(haystack: &[u8], n: N) -> Option<usize>
 where
     M: Simd,
@@ -394,7 +471,21 @@ pub(crate) fn memchr2_count(needle1: u8, needle2: u8, haystack: &[u8]) -> (usize
     #[cfg(all(target_arch = "x86_64", not(target_feature = "avx2")))]
     memchr2_count_impl_simd::<__m128i>(needle1, needle2, haystack, &mut count1, &mut count2);
 
-    #[cfg(not(target_arch = "x86_64"))]
+    #[cfg(all(
+        target_arch = "aarch64",
+        target_feature = "neon",
+        target_endian = "little"
+    ))]
+    memchr2_count_impl_simd::<uint8x16_t>(needle1, needle2, haystack, &mut count1, &mut count2);
+
+    #[cfg(not(any(
+        target_arch = "x86_64",
+        all(
+            target_arch = "aarch64",
+            target_feature = "neon",
+            target_endian = "little"
+        )
+    )))]
     memchr2_count_impl(needle1, needle2, haystack, &mut count1, &mut count2);
 
     (count1, count2)
@@ -415,7 +506,14 @@ fn memchr2_count_impl(
 }
 
 #[inline(always)]
-#[cfg(target_arch = "x86_64")]
+#[cfg(any(
+    target_arch = "x86_64",
+    all(
+        target_arch = "aarch64",
+        target_feature = "neon",
+        target_endian = "little"
+    )
+))]
 fn memchr2_count_impl_simd<M>(
     needle1: u8,
     needle2: u8,
@@ -647,7 +745,98 @@ unsafe impl Simd for __m256i {
     }
 }
 
-#[cfg(target_arch = "x86_64")]
+// SAFETY: Conditional compilation ensures that the `neon` target feature is available.
+#[cfg(all(
+    target_arch = "aarch64",
+    target_feature = "neon",
+    target_endian = "little"
+))]
+unsafe impl Simd for uint8x16_t {
+    const BYTES: usize = 16;
+
+    type Mask = u64;
+
+    const NONE: Self::Mask = 0;
+
+    const ALL: Self::Mask = 0xFF_FF_FF_FF_FF_FF_FF_FF;
+
+    #[inline(always)]
+    fn splat(byte: u8) -> Self {
+        unsafe { vdupq_n_u8(byte) }
+    }
+
+    #[inline(always)]
+    unsafe fn load_unaligned(bytes: *const u8) -> Self {
+        unsafe { vld1q_u8(bytes) }
+    }
+
+    #[inline(always)]
+    fn compare(self, other: Self) -> Self {
+        unsafe { vceqq_u8(self, other) }
+    }
+
+    #[inline(always)]
+    fn and(self, other: Self) -> Self {
+        unsafe { vandq_u8(self, other) }
+    }
+
+    #[inline(always)]
+    fn or(self, other: Self) -> Self {
+        unsafe { vorrq_u8(self, other) }
+    }
+
+    #[inline(always)]
+    fn xor(self, other: Self) -> Self {
+        unsafe { veorq_u8(self, other) }
+    }
+
+    #[inline(always)]
+    fn shift_right<const BITS: i32>(self) -> Self {
+        unsafe { vshrq_n_u8(self, BITS) }
+    }
+
+    #[inline(always)]
+    fn shuffle(self, other: Self) -> Self {
+        unsafe { vqtbl1q_u8(self, other) }
+    }
+
+    #[inline(always)]
+    fn any(self) -> bool {
+        unsafe { vmaxvq_u32(vreinterpretq_u32_u8(self)) != 0 }
+    }
+
+    #[inline(always)]
+    fn movemask(self) -> Self::Mask {
+        unsafe {
+            let half = vshrn_n_u16(vreinterpretq_u16_u8(self), 4);
+            vget_lane_u64(vreinterpret_u64_u8(half), 0)
+        }
+    }
+
+    #[inline(always)]
+    fn first_set(mask: Self::Mask) -> usize {
+        mask.trailing_zeros() as usize / 4
+    }
+
+    #[inline(always)]
+    fn first_unset(mask: Self::Mask) -> usize {
+        mask.trailing_ones() as usize / 4
+    }
+
+    #[inline(always)]
+    fn count_set(mask: Self::Mask) -> usize {
+        mask.count_ones() as usize / 4
+    }
+}
+
+#[cfg(any(
+    target_arch = "x86_64",
+    all(
+        target_arch = "aarch64",
+        target_feature = "neon",
+        target_endian = "little"
+    )
+))]
 #[cold]
 #[inline(always)]
 fn cold() {}
