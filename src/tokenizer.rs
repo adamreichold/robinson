@@ -559,7 +559,9 @@ where
         AlignedTable(hi_bytes)
     };
 
-    assert!(M::BYTES <= 32);
+    const {
+        assert!(M::BYTES == 16 || M::BYTES == 32);
+    }
 
     // SAFETY: The representation of `M: Simd` is equivalent
     // to `[u8; M::BYTES]` and `repr(align(..))` ensures alignment.
@@ -579,21 +581,21 @@ where
         let hits = lo_hits.and(hi_hits);
 
         let mask = hits.compare(M::splat(0));
-        let cl_mask = hits.compare(M::splat(1 << 7));
+        let prefix_mask = hits.compare(M::splat(1 << 7));
 
-        let mask = mask.xor(cl_mask);
+        let mask = mask.xor(prefix_mask);
 
         let mask = mask.movemask();
-        let cl_mask = cl_mask.movemask();
+        let prefix_mask = prefix_mask.movemask();
 
         if mask != M::ALL {
             let off = M::first_unset(mask);
 
-            if cl_mask != M::NONE {
-                let cl_off = M::first_set(cl_mask);
+            if prefix_mask != M::NONE {
+                let prefix_off = M::first_set(prefix_mask);
 
-                if cl_off < off {
-                    *prefix_pos = Some(*pos + cl_off);
+                if prefix_off < off {
+                    *prefix_pos = Some(*pos + prefix_off);
                 }
             }
 
@@ -602,8 +604,8 @@ where
             return Ok(());
         }
 
-        if cl_mask != M::NONE {
-            *prefix_pos = Some(*pos + M::first_set(cl_mask));
+        if prefix_mask != M::NONE {
+            *prefix_pos = Some(*pos + M::first_set(prefix_mask));
         }
 
         *pos += M::BYTES;

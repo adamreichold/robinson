@@ -252,6 +252,7 @@ where
         };
     }
 
+    // SAFETY: `haystack` points to at least 32 bytes of valid data.
     if let Some(pos) = unsafe { memchr_impl_unaligned::<M32, N>(haystack.as_ptr(), n) } {
         return Some(pos);
     }
