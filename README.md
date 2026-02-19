@@ -1,3 +1,7 @@
+This repository was moved to <https://codeberg.org/adamreichold/robinson>.
+
+---
+
 # robinson
 
 [![crates.io](https://img.shields.io/crates/v/robinson.svg)](https://crates.io/crates/robinson)
